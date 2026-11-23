@@ -1,0 +1,58 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+html {
+  scroll-behavior: smooth;
+}
+
+[id] {
+  scroll-margin-top: 100px;
+}
+
+.announcement-mask {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent);
+}
+
+.announcement-track {
+  animation: announcement-scroll 28s linear infinite;
+  will-change: transform;
+}
+
+.announcement-track:hover {
+  animation-play-state: paused;
+}
+
+.product-slider {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.product-slider::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes announcement-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (min-width: 1024px) {
+  [id] {
+    scroll-margin-top: 112px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .announcement-track {
+    animation: none;
+  }
+}
