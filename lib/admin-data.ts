@@ -1,8 +1,12 @@
 import { PREVIEW_PACKAGES, type ProductCategory, type StorePackage } from '@/lib/catalog'
 import { connectToDatabase, isMongoConfigured } from '@/lib/db'
+import { type AdminCustomer, toAdminCustomer } from '@/lib/customers'
 import { getAllPackages } from '@/lib/packages'
+import { CustomerModel } from '@/models/Customer'
 import { MessageModel } from '@/models/Message'
 import { OrderModel } from '@/models/Order'
+
+export type { AdminCustomer } from '@/lib/customers'
 
 export type AdminOrder = {
   id: string
@@ -31,21 +35,23 @@ export type AdminDashboardData = {
   orders: AdminOrder[]
   packages: StorePackage[]
   messages: AdminMessage[]
+  customers: AdminCustomer[]
   databaseConfigured: boolean
   databaseError: boolean
 }
 
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   if (!isMongoConfigured()) {
-    return { orders: [], packages: PREVIEW_PACKAGES, messages: [], databaseConfigured: false, databaseError: false }
+    return { orders: [], packages: PREVIEW_PACKAGES, messages: [], customers: [], databaseConfigured: false, databaseError: false }
   }
 
   try {
     await connectToDatabase()
-    const [orders, packages, messages] = await Promise.all([
+    const [orders, packages, messages, customers] = await Promise.all([
       OrderModel.find().sort({ createdAt: -1 }).limit(250).lean(),
       getAllPackages(),
       MessageModel.find().sort({ createdAt: -1 }).limit(100).lean(),
+      CustomerModel.find().sort({ createdAt: -1 }).lean(),
     ])
 
     return {
@@ -81,10 +87,11 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
         message: message.message,
         createdAt: new Date(message.createdAt).toISOString(),
       })),
+      customers: customers.map((customer) => toAdminCustomer(customer as Record<string, unknown>)),
       databaseConfigured: true,
       databaseError: false,
     }
   } catch {
-    return { orders: [], packages: PREVIEW_PACKAGES, messages: [], databaseConfigured: true, databaseError: true }
+    return { orders: [], packages: PREVIEW_PACKAGES, messages: [], customers: [], databaseConfigured: true, databaseError: true }
   }
 }

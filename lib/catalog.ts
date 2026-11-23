@@ -34,6 +34,8 @@ export const DEFAULT_IMAGE: Record<ProductCategory, string> = {
   ghee: PRODUCT_IMAGES[3].path,
 }
 
+export const UPLOAD_IMAGE_PREFIX = '/api/uploads/'
+
 const LEGACY_IMAGE_MAP: Record<string, string> = {
   '/images/honey-glass-jar.svg': '/images/honey-glass-jar.jpg',
   '/images/honey-dipper.svg': '/images/honey-dipper.jpg',
@@ -54,7 +56,10 @@ export function isProductCategory(value: unknown): value is ProductCategory {
 }
 
 export function isValidProductImage(value: unknown): value is string {
-  return typeof value === 'string' && PRODUCT_IMAGES.some((image) => image.path === value)
+  if (typeof value !== 'string') return false
+  if (PRODUCT_IMAGES.some((image) => image.path === value)) return true
+  if (!value.startsWith(UPLOAD_IMAGE_PREFIX)) return false
+  return /^[a-f0-9]{24}$/i.test(value.slice(UPLOAD_IMAGE_PREFIX.length))
 }
 
 export const DEFAULT_PACKAGES: Omit<StorePackage, 'id'>[] = [

@@ -75,7 +75,7 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
   const [zone, setZone] = useState<DeliveryZone>('dhaka')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
-  const [receipt, setReceipt] = useState<{ orderNumber: string; total: number } | null>(null)
+  const [receipt, setReceipt] = useState<{ orderNumber: string; total: number; phone: string } | null>(null)
 
   const honeyProducts = packages.filter((product) => product.category === 'honey')
   const gheeProducts = packages.filter((product) => product.category === 'ghee')
@@ -135,7 +135,7 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error ?? 'অর্ডার জমা হয়নি। আবার চেষ্টা করুন।')
-      setReceipt({ orderNumber: result.orderNumber, total: result.total })
+      setReceipt({ orderNumber: result.orderNumber, total: result.total, phone: payload.phone })
       setCart([])
       setCartOpen(false)
       form.reset()
@@ -301,7 +301,8 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
           <h2 id="receipt-title" className="mt-2 text-2xl font-bold text-[#143c2d]">ধন্যবাদ, আপনার অর্ডারটি পেয়েছি!</h2>
           <p className="mt-3 text-sm leading-6 text-[#687168]">আমাদের টিম শিগগিরই আপনার সঙ্গে যোগাযোগ করে অর্ডার নিশ্চিত করবে।</p>
           <div className="mt-6 rounded-2xl border border-[#e3d8bf] bg-white p-4"><span className="block text-xs text-[#7b8279]">আপনার অর্ডার নম্বর</span><strong className="mt-1 block text-lg tracking-wide text-[#173c2a]">{receipt.orderNumber}</strong><span className="mt-2 block text-sm font-semibold text-[#a77b2d]">সর্বমোট {taka(receipt.total)}</span></div>
-          <button onClick={() => setReceipt(null)} className="mt-6 min-h-12 w-full rounded-full bg-[#143c2d] px-6 font-bold text-white transition hover:bg-[#20553f]">ঠিক আছে</button>
+          <a href={`/track?order=${encodeURIComponent(receipt.orderNumber)}&phone=${encodeURIComponent(receipt.phone)}`} className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#143c2d] px-6 text-sm font-bold text-[#143c2d] transition hover:bg-[#eef3ea]">অর্ডার ট্র্যাক করুন</a>
+          <button onClick={() => setReceipt(null)} className="mt-3 min-h-12 w-full rounded-full bg-[#143c2d] px-6 font-bold text-white transition hover:bg-[#20553f]">ঠিক আছে</button>
         </div>
       </div>}
     </main>

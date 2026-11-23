@@ -71,6 +71,7 @@ export function SiteFooter() {
               <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#edc76d] sm:text-sm">সাহায্য</h3>
               <ul className="mt-4 space-y-2.5 text-xs text-white/65 sm:mt-5 sm:space-y-3 sm:text-sm">
                 <li><Link href="/#faq" className="transition hover:text-white">অর্ডারের নিয়ম</Link></li>
+                <li><Link href="/track" className="transition hover:text-white">অর্ডার ট্র্যাক করুন</Link></li>
                 <li><Link href="/privacy-policy" className="transition hover:text-white">গোপনীয়তা নীতি</Link></li>
                 <li><Link href="/terms-and-conditions" className="transition hover:text-white">শর্তাবলী</Link></li>
                 <li><Link href="/admin/login" className="transition hover:text-white">অ্যাডমিন লগইন</Link></li>

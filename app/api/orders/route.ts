@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/admin-auth'
 import { isProductCategory } from '@/lib/catalog'
 import { connectToDatabase, isMongoConfigured } from '@/lib/db'
+import { syncCustomerFromOrder } from '@/lib/customers'
 import { OrderModel } from '@/models/Order'
 import { PackageModel } from '@/models/Package'
 
@@ -149,6 +150,7 @@ export async function POST(request: Request) {
       total: subtotal + deliveryCharge,
       status: 'pending',
     })
+    await syncCustomerFromOrder({ name: customerName, phone, address })
 
     return NextResponse.json({ orderNumber: order.orderNumber, total: order.total }, { status: 201 })
   } catch {
