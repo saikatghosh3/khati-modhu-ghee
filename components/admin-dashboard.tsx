@@ -31,16 +31,21 @@ import {
   Search,
   ShoppingBag,
   Sparkles,
+  Star,
+  TicketPercent,
   Truck,
   X,
 } from 'lucide-react'
-import type { AdminCustomer, AdminDashboardData, AdminMessage, AdminOrder } from '@/lib/admin-data'
+import type { AdminCoupon, AdminCustomer, AdminDashboardData, AdminMessage, AdminOrder, AdminReview } from '@/lib/admin-data'
 import { DEFAULT_IMAGE, PRODUCT_IMAGES, UPLOAD_IMAGE_PREFIX, type ProductCategory, type StorePackage } from '@/lib/catalog'
 
-type Section = 'overview' | 'orders' | 'products' | 'customers' | 'messages'
+type Section = 'overview' | 'orders' | 'products' | 'customers' | 'messages' | 'reviews' | 'coupons'
 type OrderStatus = AdminOrder['status']
+type ReviewStatus = AdminReview['status']
 type PackageDraft = Omit<StorePackage, 'id'>
 type CustomerDraft = Omit<AdminCustomer, 'id' | 'createdAt' | 'updatedAt'>
+type ReviewDraft = Omit<AdminReview, 'id' | 'createdAt' | 'updatedAt'>
+type CouponDraft = Omit<AdminCoupon, 'id' | 'createdAt' | 'usedCount'>
 type PagingInfo = { page: number; totalPages: number; start: number; end: number; total: number }
 
 const PAGE_SIZE = 8
@@ -55,12 +60,20 @@ const statusOptions: { value: OrderStatus; label: string; color: string }[] = [
   { value: 'fake', label: 'Fake', color: 'bg-slate-200 text-slate-700' },
 ]
 
+const reviewStatusOptions: { value: ReviewStatus; label: string; color: string }[] = [
+  { value: 'pending', label: 'Pending', color: 'bg-amber-100 text-amber-800' },
+  { value: 'published', label: 'Published', color: 'bg-emerald-100 text-emerald-700' },
+  { value: 'hidden', label: 'Hidden', color: 'bg-slate-200 text-slate-700' },
+]
+
 const sectionMeta: Record<Section, { title: string; subtitle: string; icon: LucideIcon }> = {
   overview: { title: 'Overview', subtitle: 'A live snapshot of your store operations.', icon: LayoutDashboard },
   orders: { title: 'Orders', subtitle: 'Review, filter and update customer orders.', icon: ShoppingBag },
   products: { title: 'Products', subtitle: 'Manage honey and ghee catalog records.', icon: Package },
   customers: { title: 'Customers', subtitle: 'Track buyers, order history and contact details.', icon: CircleCheck },
   messages: { title: 'Messages', subtitle: 'Read and respond to customer enquiries.', icon: MessageCircle },
+  reviews: { title: 'Reviews', subtitle: 'Moderate, curate and publish customer testimonials.', icon: Star },
+  coupons: { title: 'Coupons', subtitle: 'Create and manage discount coupons for checkout.', icon: TicketPercent },
 }
 
 const emptyDraft: PackageDraft = {
@@ -79,11 +92,35 @@ const emptyDraft: PackageDraft = {
 
 const emptyCustomerDraft: CustomerDraft = { name: '', phone: '', address: '', notes: '' }
 
+const emptyReviewDraft: ReviewDraft = {
+  name: '',
+  phone: '',
+  location: '',
+  rating: 5,
+  title: '',
+  comment: '',
+  status: 'pending',
+  featured: false,
+  sortOrder: 0,
+}
+
+const emptyCouponDraft: CouponDraft = {
+  code: '',
+  type: 'percent',
+  value: 10,
+  minSubtotal: 0,
+  maxDiscount: 0,
+  usageLimit: 0,
+  active: true,
+  expiresAt: null,
+}
+
 const money = (amount: number) => `৳${new Intl.NumberFormat('en-BD').format(amount)}`
 const dateTime = (value: string) => new Intl.DateTimeFormat('en-BD', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 const shortId = (value: string) => value.slice(-6).toUpperCase()
 const whatsapp = (phone: string) => `https://wa.me/${phone.replace(/^0/, '88')}`
 const zoneLabel = (zone: 'dhaka' | 'outside') => zone === 'dhaka' ? 'ঢাকার ভিতরে' : 'ঢাকার বাইরে'
+const reviewInitials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => Array.from(part)[0] ?? '').join('')
 
 function paginate<T>(items: T[], requestedPage: number, size = PAGE_SIZE) {
   const total = items.length
@@ -112,6 +149,8 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
   const [packages, setPackages] = useState(initialData.packages)
   const [messages, setMessages] = useState(initialData.messages)
   const [customers, setCustomers] = useState(initialData.customers)
+  const [reviews, setReviews] = useState(initialData.reviews)
+  const [coupons, setCoupons] = useState(initialData.coupons)
   const [section, setSection] = useState<Section>('overview')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -122,6 +161,10 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
   const [productPage, setProductPage] = useState(1)
   const [messagePage, setMessagePage] = useState(1)
   const [customerPage, setCustomerPage] = useState(1)
+  const [reviewPage, setReviewPage] = useState(1)
+  const [couponPage, setCouponPage] = useState(1)
+  const [reviewFilter, setReviewFilter] = useState<'all' | ReviewStatus>('all')
+  const [couponFilter, setCouponFilter] = useState<'all' | 'active' | 'inactive' | 'expired'>('all')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState('')
@@ -134,6 +177,12 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
   const [customerDraft, setCustomerDraft] = useState<CustomerDraft>(emptyCustomerDraft)
   const [editingCustomerId, setEditingCustomerId] = useState('')
   const [showCustomerForm, setShowCustomerForm] = useState(false)
+  const [reviewDraft, setReviewDraft] = useState<ReviewDraft>(emptyReviewDraft)
+  const [editingReviewId, setEditingReviewId] = useState('')
+  const [showReviewForm, setShowReviewForm] = useState(false)
+  const [couponDraft, setCouponDraft] = useState<CouponDraft>(emptyCouponDraft)
+  const [editingCouponId, setEditingCouponId] = useState('')
+  const [showCouponForm, setShowCouponForm] = useState(false)
 
   const todayKey = new Date().toDateString()
   const todayOrders = orders.filter((order) => new Date(order.createdAt).toDateString() === todayKey).length
@@ -142,6 +191,10 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
   const revenue = orders.filter((order) => !['cancelled', 'fake'].includes(order.status)).reduce((sum, order) => sum + order.total, 0)
   const liveProducts = packages.filter((product) => product.active).length
   const hiddenProducts = packages.length - liveProducts
+  const pendingReviews = reviews.filter((review) => review.status === 'pending').length
+  const publishedReviews = reviews.filter((review) => review.status === 'published').length
+  const averageRating = reviews.length ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : 0
+  const activeCoupons = coupons.filter((coupon) => coupon.active && (!coupon.expiresAt || new Date(coupon.expiresAt).getTime() > Date.now())).length
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -152,16 +205,18 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
       setSelectedMessage(null)
       setSelectedCustomer(null)
       setShowCustomerForm(false)
+      setShowReviewForm(false)
+      setShowCouponForm(false)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
   useEffect(() => {
-    const locked = mobileNavOpen || showProductForm || showCustomerForm || Boolean(selectedOrder) || Boolean(selectedMessage) || Boolean(selectedCustomer)
+    const locked = mobileNavOpen || showProductForm || showCustomerForm || showReviewForm || showCouponForm || Boolean(selectedOrder) || Boolean(selectedMessage) || Boolean(selectedCustomer)
     document.body.style.overflow = locked ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
-  }, [mobileNavOpen, showProductForm, showCustomerForm, selectedOrder, selectedMessage, selectedCustomer])
+  }, [mobileNavOpen, showProductForm, showCustomerForm, showReviewForm, showCouponForm, selectedOrder, selectedMessage, selectedCustomer])
 
   const visibleOrders = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -192,10 +247,35 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
     return customers.filter((customer) => !query || customer.name.toLowerCase().includes(query) || customer.phone.includes(query) || customer.address.toLowerCase().includes(query))
   }, [customers, search])
 
+  const visibleReviews = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return reviews.filter((review) => {
+      const matchesStatus = reviewFilter === 'all' || review.status === reviewFilter
+      const matchesSearch = !query || review.name.toLowerCase().includes(query) || review.location.toLowerCase().includes(query) || review.comment.toLowerCase().includes(query) || review.title.toLowerCase().includes(query)
+      return matchesStatus && matchesSearch
+    })
+  }, [reviews, reviewFilter, search])
+
+  const visibleCoupons = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    const now = Date.now()
+    return coupons.filter((coupon) => {
+      const expired = Boolean(coupon.expiresAt) && new Date(coupon.expiresAt as string).getTime() <= now
+      const matchesFilter = couponFilter === 'all'
+        || (couponFilter === 'active' && coupon.active && !expired)
+        || (couponFilter === 'inactive' && !coupon.active)
+        || (couponFilter === 'expired' && expired)
+      const matchesSearch = !query || coupon.code.toLowerCase().includes(query)
+      return matchesFilter && matchesSearch
+    })
+  }, [coupons, couponFilter, search])
+
   const orderPaging = useMemo(() => paginate(visibleOrders, orderPage), [visibleOrders, orderPage])
   const productPaging = useMemo(() => paginate(visibleProducts, productPage), [visibleProducts, productPage])
   const messagePaging = useMemo(() => paginate(visibleMessages, messagePage), [visibleMessages, messagePage])
   const customerPaging = useMemo(() => paginate(visibleCustomers, customerPage), [visibleCustomers, customerPage])
+  const reviewPaging = useMemo(() => paginate(visibleReviews, reviewPage), [visibleReviews, reviewPage])
+  const couponPaging = useMemo(() => paginate(visibleCoupons, couponPage), [visibleCoupons, couponPage])
 
   const setBanner = (message: string, isError = false) => {
     setNotice(isError ? '' : message)
@@ -213,6 +293,10 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
     setProductPage(1)
     setMessagePage(1)
     setCustomerPage(1)
+    setReviewPage(1)
+    setCouponPage(1)
+    setReviewFilter('all')
+    setCouponFilter('all')
     setMobileNavOpen(false)
   }
 
@@ -359,10 +443,220 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
     }
   }
 
+  const refreshReviews = async () => {
+    setBusyId('reviews-refresh')
+    try {
+      const response = await fetch('/api/reviews?all=1', { cache: 'no-store' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Could not refresh reviews.')
+      setReviews(result.reviews as AdminReview[])
+      setBanner('Reviews refreshed.')
+    } catch (caught) {
+      setBanner(caught instanceof Error ? caught.message : 'Could not refresh reviews.', true)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  const refreshCoupons = async () => {
+    setBusyId('coupons-refresh')
+    try {
+      const response = await fetch('/api/coupons', { cache: 'no-store' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Could not refresh coupons.')
+      setCoupons(result.coupons as AdminCoupon[])
+      setBanner('Coupons refreshed.')
+    } catch (caught) {
+      setBanner(caught instanceof Error ? caught.message : 'Could not refresh coupons.', true)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  const startNewReview = () => {
+    setReviewDraft({ ...emptyReviewDraft, status: 'published' })
+    setEditingReviewId('')
+    setShowReviewForm(true)
+    setNotice('')
+    setError('')
+  }
+
+  const editReview = (review: AdminReview) => {
+    setReviewDraft({
+      name: review.name,
+      phone: review.phone,
+      location: review.location,
+      rating: review.rating,
+      title: review.title,
+      comment: review.comment,
+      status: review.status,
+      featured: review.featured,
+      sortOrder: review.sortOrder,
+    })
+    setEditingReviewId(review.id)
+    setShowReviewForm(true)
+    setNotice('')
+    setError('')
+  }
+
+  const saveReview = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusyId('review-form')
+    setError('')
+    try {
+      const response = await fetch(editingReviewId ? `/api/reviews/${editingReviewId}` : '/api/reviews', {
+        method: editingReviewId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reviewDraft),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Could not save review.')
+      await refreshReviews()
+      setShowReviewForm(false)
+      setReviewDraft({ ...emptyReviewDraft })
+      setBanner(editingReviewId ? 'Review updated.' : 'Review added.')
+    } catch (caught) {
+      setBanner(caught instanceof Error ? caught.message : 'Could not save review.', true)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  const toggleReviewStatus = async (review: AdminReview, status: ReviewStatus) => {
+    setBusyId(review.id)
+    setNotice('')
+    setError('')
+    try {
+      const response = await fetch(`/api/reviews/${review.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Could not update review.')
+      setReviews((current) => current.map((item) => item.id === review.id ? { ...item, ...(result.review as AdminReview) } : item))
+      setBanner(status === 'published' ? 'Review published to storefront.' : status === 'hidden' ? 'Review hidden from storefront.' : 'Review moved to pending.')
+    } catch (caught) {
+      setBanner(caught instanceof Error ? caught.message : 'Could not update review.', true)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  const deleteReview = async (review: AdminReview) => {
+    if (!window.confirm(`Delete review from “${review.name}”? This cannot be undone.`)) return
+    setBusyId(review.id)
+    try {
+      const response = await fetch(`/api/reviews/${review.id}`, { method: 'DELETE' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Could not delete review.')
+      setReviews((current) => current.filter((item) => item.id !== review.id))
+      setBanner('Review deleted.')
+    } catch (caught) {
+      setBanner(caught instanceof Error ? caught.message : 'Could not delete review.', true)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  const startNewCoupon = () => {
+    setCouponDraft({ ...emptyCouponDraft })
+    setEditingCouponId('')
+    setShowCouponForm(true)
+    setNotice('')
+    setError('')
+  }
+
+  const editCoupon = (coupon: AdminCoupon) => {
+    setCouponDraft({
+      code: coupon.code,
+      type: coupon.type,
+      value: coupon.value,
+      minSubtotal: coupon.minSubtotal,
+      maxDiscount: coupon.maxDiscount,
+      usageLimit: coupon.usageLimit,
+      active: coupon.active,
+      expiresAt: coupon.expiresAt ? coupon.expiresAt.slice(0, 16) : null,
+    })
+    setEditingCouponId(coupon.id)
+    setShowCouponForm(true)
+    setNotice('')
+    setError('')
+  }
+
+  const saveCoupon = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusyId('coupon-form')
+    setError('')
+    try {
+      const payload = {
+        ...couponDraft,
+        code: couponDraft.code.trim().toUpperCase(),
+        value: Number(couponDraft.value),
+        minSubtotal: Number(couponDraft.minSubtotal),
+        maxDiscount: Number(couponDraft.maxDiscount),
+        usageLimit: Number(couponDraft.usageLimit),
+        expiresAt: couponDraft.expiresAt ? new Date(couponDraft.expiresAt).toISOString() : null,
+      }
+      const response = await fetch(editingCouponId ? `/api/coupons/${editingCouponId}` : '/api/coupons', {
+        method: editingCouponId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Could not save coupon.')
+      await refreshCoupons()
+      setShowCouponForm(false)
+      setCouponDraft({ ...emptyCouponDraft })
+      setBanner(editingCouponId ? 'Coupon updated.' : 'Coupon created.')
+    } catch (caught) {
+      setBanner(caught instanceof Error ? caught.message : 'Could not save coupon.', true)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  const toggleCoupon = async (coupon: AdminCoupon) => {
+    setBusyId(coupon.id)
+    try {
+      const response = await fetch(`/api/coupons/${coupon.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !coupon.active }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Could not update coupon.')
+      setCoupons((current) => current.map((item) => item.id === coupon.id ? { ...item, ...(result.coupon as AdminCoupon) } : item))
+      setBanner(coupon.active ? 'Coupon deactivated.' : 'Coupon activated.')
+    } catch (caught) {
+      setBanner(caught instanceof Error ? caught.message : 'Could not update coupon.', true)
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  const deleteCoupon = async (coupon: AdminCoupon) => {
+    if (!window.confirm(`Delete coupon “${coupon.code}”? This cannot be undone.`)) return
+    setBusyId(coupon.id)
+    try {
+      const response = await fetch(`/api/coupons/${coupon.id}`, { method: 'DELETE' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Could not delete coupon.')
+      setCoupons((current) => current.filter((item) => item.id !== coupon.id))
+      setBanner('Coupon deleted.')
+    } catch (caught) {
+      setBanner(caught instanceof Error ? caught.message : 'Could not delete coupon.', true)
+    } finally {
+      setBusyId('')
+    }
+  }
+
   const refreshActive = () => {
     if (section === 'products') return refreshPackagesWithBanner()
     if (section === 'customers') return refreshCustomers()
     if (section === 'messages') return refreshMessages()
+    if (section === 'reviews') return refreshReviews()
+    if (section === 'coupons') return refreshCoupons()
     return refreshOrders()
   }
 
@@ -459,11 +753,13 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
     { key: 'products', label: 'Products', icon: Package, count: packages.length },
     { key: 'customers', label: 'Customers', icon: CircleCheck, count: customers.length },
     { key: 'messages', label: 'Messages', icon: MessageCircle, count: messages.length },
+    { key: 'reviews', label: 'Reviews', icon: Star, count: reviews.length },
+    { key: 'coupons', label: 'Coupons', icon: TicketPercent, count: coupons.length },
   ]
 
   const meta = sectionMeta[section]
   const customerOrders = selectedCustomer ? orders.filter((order) => order.phone === selectedCustomer.phone) : []
-  const isRefreshing = ['orders-refresh', 'products-refresh', 'customers-refresh', 'messages-refresh'].includes(busyId)
+  const isRefreshing = ['orders-refresh', 'products-refresh', 'customers-refresh', 'messages-refresh', 'reviews-refresh', 'coupons-refresh'].includes(busyId)
 
   return (
     <div className="min-h-screen bg-[#f4f6f2] text-[#17241d] lg:flex">
@@ -518,7 +814,7 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
           {initialData.databaseError && <Banner tone="error">Could not connect to MongoDB. Check your Atlas connection string and network access.</Banner>}
           {(notice || error) && <Banner tone={error ? 'error' : 'success'} dismissible onDismiss={() => { setNotice(''); setError('') }}>{error || notice}</Banner>}
 
-          {section === 'overview' && <OverviewSection orders={orders} products={packages} messages={messages} customers={customers} metrics={{ todayOrders, pendingOrders, inProgressOrders, revenue }} onSectionChange={switchSection} onStatusChange={updateStatus} busyId={busyId} onViewOrder={setSelectedOrder} databaseLabel={initialData.databaseConfigured && !initialData.databaseError ? 'Connected' : 'Needs attention'} />}
+          {section === 'overview' && <OverviewSection orders={orders} products={packages} messages={messages} customers={customers} reviews={reviews} metrics={{ todayOrders, pendingOrders, inProgressOrders, revenue, pendingReviews, publishedReviews, averageRating }} onSectionChange={switchSection} onStatusChange={updateStatus} busyId={busyId} onViewOrder={setSelectedOrder} databaseLabel={initialData.databaseConfigured && !initialData.databaseError ? 'Connected' : 'Needs attention'} />}
 
           {section === 'orders' && <Panel eyebrow="Fulfilment" title="Order management" subtitle="Search, filter and update each customer order from one table." actions={<button onClick={refreshOrders} disabled={busyId === 'orders-refresh'} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#dfe5dc] bg-white px-3.5 text-sm font-semibold text-[#526458] hover:bg-[#f7f9f5] disabled:opacity-50"><RefreshCw className={`size-4 ${busyId === 'orders-refresh' ? 'animate-spin' : ''}`} /> Refresh</button>}>
             <div className="flex flex-col gap-3 border-b border-[#edf0eb] p-4 lg:flex-row lg:items-center lg:justify-between">
@@ -561,6 +857,30 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
             <MessageTable messages={messagePaging.items} onView={setSelectedMessage} />
             <Pagination paging={messagePaging} onChange={setMessagePage} />
           </Panel>}
+
+          {section === 'reviews' && <Panel eyebrow="Social proof" title="Customer reviews" subtitle="Approve submissions, feature the best and keep the storefront slider fresh." actions={<div className="flex flex-wrap gap-2"><button onClick={refreshReviews} disabled={busyId === 'reviews-refresh'} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#dfe5dc] bg-white px-3.5 text-sm font-semibold text-[#526458] hover:bg-[#f7f9f5] disabled:opacity-50"><RefreshCw className={`size-4 ${busyId === 'reviews-refresh' ? 'animate-spin' : ''}`} /> Refresh</button><button onClick={startNewReview} disabled={!initialData.databaseConfigured || initialData.databaseError} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#b7791f] px-4 text-sm font-semibold text-white hover:bg-[#c98a2a] disabled:opacity-50"><Plus className="size-4" /> Add review</button></div>}>
+            <div className="flex flex-col gap-3 border-b border-[#edf0eb] p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative lg:w-96"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#9aa299]" /><input value={search} onChange={(event) => { setSearch(event.target.value); setReviewPage(1) }} placeholder="Search name, title or review text" className="h-10 w-full rounded-xl border border-[#e0e6dd] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#6f9b77]" /></div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={reviewFilter} onChange={(event) => { setReviewFilter(event.target.value as 'all' | ReviewStatus); setReviewPage(1) }} className="h-10 rounded-xl border border-[#e0e6dd] bg-white px-3 pr-8 text-sm font-semibold text-[#48594c] outline-none focus:border-[#6f9b77]"><option value="all">All statuses</option>{reviewStatusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select>
+                <p className="text-xs font-semibold text-[#7b857b]">{publishedReviews} live • {pendingReviews} pending</p>
+              </div>
+            </div>
+            <ReviewTable reviews={reviewPaging.items} busyId={busyId} canManage={initialData.databaseConfigured && !initialData.databaseError} onEdit={editReview} onStatusChange={toggleReviewStatus} onDelete={deleteReview} />
+            <Pagination paging={reviewPaging} onChange={setReviewPage} />
+          </Panel>}
+
+          {section === 'coupons' && <Panel eyebrow="Promotions" title="Coupon management" subtitle="Create, activate and control discount codes used at checkout." actions={<div className="flex flex-wrap gap-2"><button onClick={refreshCoupons} disabled={busyId === 'coupons-refresh'} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#dfe5dc] bg-white px-3.5 text-sm font-semibold text-[#526458] hover:bg-[#f7f9f5] disabled:opacity-50"><RefreshCw className={`size-4 ${busyId === 'coupons-refresh' ? 'animate-spin' : ''}`} /> Refresh</button><button onClick={startNewCoupon} disabled={!initialData.databaseConfigured || initialData.databaseError} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#174a31] px-4 text-sm font-semibold text-white hover:bg-[#205b3d] disabled:opacity-50"><Plus className="size-4" /> Add coupon</button></div>}>
+            <div className="flex flex-col gap-3 border-b border-[#edf0eb] p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative lg:w-96"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#9aa299]" /><input value={search} onChange={(event) => { setSearch(event.target.value); setCouponPage(1) }} placeholder="Search coupon code" className="h-10 w-full rounded-xl border border-[#e0e6dd] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#6f9b77]" /></div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={couponFilter} onChange={(event) => { setCouponFilter(event.target.value as 'all' | 'active' | 'inactive' | 'expired'); setCouponPage(1) }} className="h-10 rounded-xl border border-[#e0e6dd] bg-white px-3 pr-8 text-sm font-semibold text-[#48594c] outline-none focus:border-[#6f9b77]"><option value="all">All coupons</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="expired">Expired</option></select>
+                <p className="text-xs font-semibold text-[#7b857b]">{activeCoupons} active coupons</p>
+              </div>
+            </div>
+            <CouponTable coupons={couponPaging.items} busyId={busyId} canManage={initialData.databaseConfigured && !initialData.databaseError} onEdit={editCoupon} onToggle={toggleCoupon} onDelete={deleteCoupon} />
+            <Pagination paging={couponPaging} onChange={setCouponPage} />
+          </Panel>}
         </main>
       </div>
 
@@ -584,6 +904,7 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
           <div className="rounded-xl border border-[#e5e9e2] bg-white p-4 text-sm">
             <SummaryRow label="Subtotal" value={money(selectedOrder.subtotal)} />
             <SummaryRow label="Delivery" value={selectedOrder.deliveryCharge === 0 ? 'Free' : money(selectedOrder.deliveryCharge)} />
+            {selectedOrder.discount > 0 && <SummaryRow label={`Discount${selectedOrder.couponCode ? ` (${selectedOrder.couponCode})` : ''}`} value={`-${money(selectedOrder.discount)}`} />}
             <div className="mt-3 flex justify-between border-t border-[#edf0eb] pt-3 text-base font-bold text-[#173c2a]"><span>Total</span><span>{money(selectedOrder.total)}</span></div>
           </div>
         </div>
@@ -612,6 +933,10 @@ export function AdminDashboard({ initialData }: { initialData: AdminDashboardDat
       </DetailDrawer>}
 
       {showCustomerForm && <CustomerFormDrawer draft={customerDraft} setDraft={setCustomerDraft} editingId={editingCustomerId} busy={busyId === 'customer-form'} onClose={() => setShowCustomerForm(false)} onSubmit={saveCustomer} />}
+
+      {showReviewForm && <ReviewFormDrawer draft={reviewDraft} setDraft={setReviewDraft} editingId={editingReviewId} busy={busyId === 'review-form'} onClose={() => setShowReviewForm(false)} onSubmit={saveReview} />}
+
+      {showCouponForm && <CouponFormDrawer draft={couponDraft} setDraft={setCouponDraft} editingId={editingCouponId} busy={busyId === 'coupon-form'} onClose={() => setShowCouponForm(false)} onSubmit={saveCoupon} />}
     </div>
   )
 }
@@ -621,7 +946,7 @@ function Banner({ tone, children, dismissible, onDismiss }: { tone: 'warning' | 
   return <div className={`mb-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${styles[tone]}`}><div>{children}</div>{dismissible && <button onClick={onDismiss} className="grid size-7 shrink-0 place-items-center rounded-lg hover:bg-black/5" aria-label="Dismiss message"><X className="size-4" /></button>}</div>
 }
 
-function OverviewSection({ orders, products, messages, customers, metrics, onSectionChange, onStatusChange, busyId, onViewOrder, databaseLabel }: { orders: AdminOrder[]; products: StorePackage[]; messages: AdminMessage[]; customers: AdminCustomer[]; metrics: { todayOrders: number; pendingOrders: number; inProgressOrders: number; revenue: number }; onSectionChange: (section: Section) => void; onStatusChange: (id: string, status: OrderStatus) => void; busyId: string; onViewOrder: (order: AdminOrder) => void; databaseLabel: string }) {
+function OverviewSection({ orders, products, messages, customers, reviews, metrics, onSectionChange, onStatusChange, busyId, onViewOrder, databaseLabel }: { orders: AdminOrder[]; products: StorePackage[]; messages: AdminMessage[]; customers: AdminCustomer[]; reviews: AdminReview[]; metrics: { todayOrders: number; pendingOrders: number; inProgressOrders: number; revenue: number; pendingReviews: number; publishedReviews: number; averageRating: number }; onSectionChange: (section: Section) => void; onStatusChange: (id: string, status: OrderStatus) => void; busyId: string; onViewOrder: (order: AdminOrder) => void; databaseLabel: string }) {
   const recent = orders.slice(0, OVERVIEW_SIZE)
   const cards = [
     { title: "Today's orders", value: String(metrics.todayOrders), detail: 'Placed today', icon: CalendarDays, tone: 'gold' },
@@ -642,6 +967,9 @@ function OverviewSection({ orders, products, messages, customers, metrics, onSec
           <QuickRow icon={Archive} label="Hidden products" value={String(products.filter((product) => !product.active).length)} onClick={() => onSectionChange('products')} />
           <QuickRow icon={CircleCheck} label="Customers" value={String(customers.length)} onClick={() => onSectionChange('customers')} />
           <QuickRow icon={MessageCircle} label="Total messages" value={String(messages.length)} onClick={() => onSectionChange('messages')} />
+          <QuickRow icon={Star} label="Total reviews" value={String(reviews.length)} onClick={() => onSectionChange('reviews')} />
+          <QuickRow icon={Star} label="Pending reviews" value={String(metrics.pendingReviews)} onClick={() => onSectionChange('reviews')} />
+          <div className="mt-1 flex items-center justify-between rounded-xl border border-[#e5e9e2] bg-[#f8faf7] px-4 py-3 text-sm"><span className="font-semibold text-[#5b6b5e]">Average rating</span><span className="inline-flex items-center gap-1.5 font-bold text-[#244833]"><Star className="size-4 fill-[#d99f39] text-[#d99f39]" /> {metrics.averageRating.toFixed(1)} / 5 · {metrics.publishedReviews} live</span></div>
           <div className="mt-1 flex items-center justify-between rounded-xl border border-[#e5e9e2] bg-[#f8faf7] px-4 py-3 text-sm"><span className="font-semibold text-[#5b6b5e]">Database</span><span className="inline-flex items-center gap-2 font-bold text-[#244833]"><CircleCheck className="size-4 text-[#3d7d51]" /> {databaseLabel}</span></div>
           <button onClick={() => onSectionChange('products')} className="mt-2 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#174a31] text-sm font-bold text-white hover:bg-[#205b3d]"><Plus className="size-4" /> Manage catalog</button>
         </div>
@@ -695,6 +1023,43 @@ function ProductTable({ products, busyId, canManage, onEdit, onToggle, onDelete 
 
 function MessageTable({ messages, onView }: { messages: AdminMessage[]; onView: (message: AdminMessage) => void }) {
   return <div className="overflow-x-auto"><table className="w-full min-w-[860px] border-collapse text-left text-sm"><thead className="bg-[#f8faf7] text-[11px] uppercase tracking-wide text-[#7c877d]"><tr><th className="px-5 py-3 font-bold">Contact</th><th className="px-5 py-3 font-bold">Message</th><th className="px-5 py-3 font-bold">Received</th><th className="px-5 py-3 text-right font-bold">Action</th></tr></thead><tbody className="divide-y divide-[#edf0eb]">{messages.map((item) => <tr key={item.id} className="align-top transition hover:bg-[#fbfcfa]"><td className="px-5 py-3.5"><span className="block font-bold text-[#244833]">{item.name}</span><span className="mt-1 block text-xs text-[#818a80]">{item.phone}</span></td><td className="px-5 py-3.5"><span className="block max-w-[560px] truncate text-[#4e5f51]">{item.message}</span></td><td className="px-5 py-3.5"><span className="whitespace-nowrap text-xs text-[#8e978d]">{dateTime(item.createdAt)}</span></td><td className="px-5 py-3.5 text-right"><div className="flex items-center justify-end gap-2"><a href={`tel:${item.phone}`} className="grid size-9 place-items-center rounded-lg border border-[#e2e7df] text-[#607064] hover:bg-[#f5f7f3]" aria-label="Call customer"><Phone className="size-4" /></a><button onClick={() => onView(item)} className="grid size-9 place-items-center rounded-lg border border-[#e2e7df] text-[#607064] hover:bg-[#f5f7f3]" aria-label="View message"><Eye className="size-4" /></button></div></td></tr>)}</tbody></table>{messages.length === 0 && <EmptyState icon={MessageCircle} title="No messages found" message="Try a different search term." />}</div>
+}
+
+function CouponTable({ coupons, busyId, canManage, onEdit, onToggle, onDelete }: { coupons: AdminCoupon[]; busyId: string; canManage: boolean; onEdit: (coupon: AdminCoupon) => void; onToggle: (coupon: AdminCoupon) => void; onDelete: (coupon: AdminCoupon) => void }) {
+  const now = Date.now()
+  return <div className="overflow-x-auto"><table className="w-full min-w-[980px] border-collapse text-left text-sm"><thead className="bg-[#f8faf7] text-[11px] uppercase tracking-wide text-[#7c877d]"><tr><th className="px-5 py-3 font-bold">Code</th><th className="px-5 py-3 font-bold">Discount</th><th className="px-5 py-3 font-bold">Usage</th><th className="px-5 py-3 font-bold">Expiry</th><th className="px-5 py-3 font-bold">Status</th><th className="px-5 py-3 text-right font-bold">Actions</th></tr></thead><tbody className="divide-y divide-[#edf0eb]">{coupons.map((coupon) => {
+    const expired = Boolean(coupon.expiresAt) && new Date(coupon.expiresAt as string).getTime() <= now
+    const statusLabel = expired ? 'Expired' : coupon.active ? 'Active' : 'Inactive'
+    const statusClass = expired ? 'bg-rose-100 text-rose-700' : coupon.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
+    return <tr key={coupon.id} className="align-top transition hover:bg-[#fbfcfa]">
+      <td className="px-5 py-3.5"><span className="block font-mono text-sm font-bold text-[#244833]">{coupon.code}</span><span className="mt-1 block text-xs text-[#8a9389]">Min {money(coupon.minSubtotal)}{coupon.maxDiscount > 0 ? ` • Cap ${money(coupon.maxDiscount)}` : ''}</span></td>
+      <td className="px-5 py-3.5"><span className="font-bold text-[#334538]">{coupon.type === 'percent' ? `${coupon.value}%` : money(coupon.value)}</span><span className="mt-1 block text-xs text-[#8a9389]">{coupon.type === 'percent' ? 'Percentage' : 'Fixed amount'}</span></td>
+      <td className="px-5 py-3.5"><span className="font-semibold text-[#334538]">{coupon.usedCount}{coupon.usageLimit > 0 ? ` / ${coupon.usageLimit}` : ' / ∞'}</span></td>
+      <td className="px-5 py-3.5"><span className="text-xs text-[#6f7c70]">{coupon.expiresAt ? dateTime(coupon.expiresAt) : 'No expiry'}</span></td>
+      <td className="px-5 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${statusClass}`}>{statusLabel}</span></td>
+      <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1.5"><button onClick={() => onToggle(coupon)} disabled={!canManage || busyId === coupon.id} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#e2e7df] px-3 text-xs font-bold text-[#526458] hover:bg-[#f5f7f3] disabled:opacity-40">{coupon.active ? 'Deactivate' : 'Activate'}</button><button onClick={() => onEdit(coupon)} disabled={!canManage} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#e2e7df] px-3 text-xs font-bold text-[#526458] hover:bg-[#f5f7f3] disabled:opacity-40"><Pencil className="size-3.5" /> Edit</button><button onClick={() => onDelete(coupon)} disabled={!canManage || busyId === coupon.id} className="grid size-9 place-items-center rounded-lg text-[#a45d4e] hover:bg-[#fff1ed] disabled:opacity-40" aria-label={`Delete ${coupon.code}`} title="Delete coupon"><Archive className="size-4" /></button></div></td>
+    </tr>
+  })}</tbody></table>{coupons.length === 0 && <EmptyState icon={TicketPercent} title="No coupons found" message="Create a coupon to offer discounts at checkout." />}</div>
+}
+
+function ReviewTable({ reviews, busyId, canManage, onEdit, onStatusChange, onDelete }: { reviews: AdminReview[]; busyId: string; canManage: boolean; onEdit: (review: AdminReview) => void; onStatusChange: (review: AdminReview, status: ReviewStatus) => void; onDelete: (review: AdminReview) => void }) {
+  return <div className="overflow-x-auto"><table className="w-full min-w-[1080px] border-collapse text-left text-sm"><thead className="bg-[#f8faf7] text-[11px] uppercase tracking-wide text-[#7c877d]"><tr><th className="px-5 py-3 font-bold">Customer</th><th className="px-5 py-3 font-bold">Rating</th><th className="px-5 py-3 font-bold">Review</th><th className="px-5 py-3 font-bold">Status</th><th className="px-5 py-3 font-bold">Feature</th><th className="px-5 py-3 font-bold">Received</th><th className="px-5 py-3 text-right font-bold">Actions</th></tr></thead><tbody className="divide-y divide-[#edf0eb]">{reviews.map((review) => {
+    const status = reviewStatusOptions.find((option) => option.value === review.status) ?? reviewStatusOptions[0]
+    return <tr key={review.id} className="align-top transition hover:bg-[#fbfcfa]">
+      <td className="px-5 py-3.5"><div className="flex items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#f6ecd2] text-xs font-bold text-[#a57825]">{reviewInitials(review.name)}</span><div className="min-w-0"><span className="block max-w-[200px] truncate font-bold text-[#244833]">{review.name}</span><span className="mt-1 block max-w-[200px] truncate text-xs text-[#949c93]">{review.location || '—'}</span></div></div></td>
+      <td className="px-5 py-3.5"><span className="inline-flex items-center gap-0.5" aria-label={`${review.rating} out of 5`}>{[1, 2, 3, 4, 5].map((value) => <Star key={value} className={`size-3.5 ${value <= review.rating ? 'fill-[#d99f39] text-[#d99f39]' : 'text-[#d4d9d2]'}`} />)}</span></td>
+      <td className="px-5 py-3.5"><span className="block max-w-[300px] truncate font-semibold text-[#334538]">{review.title || 'Untitled review'}</span><span className="mt-1 block max-w-[340px] text-xs leading-5 text-[#8a9389]" title={review.comment}>{review.comment.length > 110 ? `${review.comment.slice(0, 110)}…` : review.comment}</span></td>
+      <td className="px-5 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${status.color}`}>{status.label}</span></td>
+      <td className="px-5 py-3.5">{review.featured ? <span className="inline-flex items-center gap-1 rounded-full bg-[#fbf0d8] px-2.5 py-1 text-[11px] font-bold text-[#aa7928]"><Star className="size-3 fill-[#d99f39] text-[#d99f39]" /> Featured</span> : <span className="text-xs text-[#a0a79e]">—</span>}</td>
+      <td className="px-5 py-3.5"><span className="whitespace-nowrap text-xs text-[#8e978d]">{dateTime(review.createdAt)}</span></td>
+      <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1.5">
+        <button onClick={() => onStatusChange(review, 'published')} disabled={!canManage || busyId === review.id || review.status === 'published'} title="Publish to storefront" aria-label={`Publish review from ${review.name}`} className="grid size-9 place-items-center rounded-lg border border-[#e2e7df] text-[#3d7d51] hover:bg-[#eef5ec] disabled:opacity-35"><ArrowUpRight className="size-4" /></button>
+        <button onClick={() => onStatusChange(review, 'hidden')} disabled={!canManage || busyId === review.id || review.status === 'hidden'} title="Hide from storefront" aria-label={`Hide review from ${review.name}`} className="grid size-9 place-items-center rounded-lg border border-[#e2e7df] text-[#607064] hover:bg-[#f5f7f3] disabled:opacity-35"><ArrowDownRight className="size-4" /></button>
+        <button onClick={() => onEdit(review)} disabled={!canManage} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#e2e7df] px-3 text-xs font-bold text-[#526458] hover:bg-[#f5f7f3] disabled:opacity-40"><Pencil className="size-3.5" /> Edit</button>
+        <button onClick={() => onDelete(review)} disabled={!canManage || busyId === review.id} className="grid size-9 place-items-center rounded-lg text-[#a45d4e] hover:bg-[#fff1ed] disabled:opacity-40" aria-label={`Delete review from ${review.name}`} title="Delete review"><Archive className="size-4" /></button>
+      </div></td>
+    </tr>
+  })}</tbody></table>{reviews.length === 0 && <EmptyState icon={Star} title="No reviews found" message="Add a review or change the status filter to see more." />}</div>
 }
 
 function CustomerTable({ customers, orders, busyId, canManage, onView, onEdit, onDelete }: { customers: AdminCustomer[]; orders: AdminOrder[]; busyId: string; canManage: boolean; onView: (customer: AdminCustomer) => void; onEdit: (customer: AdminCustomer) => void; onDelete: (customer: AdminCustomer) => void }) {
@@ -797,6 +1162,58 @@ function CustomerFormDrawer({ draft, setDraft, editingId, busy, onClose, onSubmi
       <label className="grid gap-1.5 text-xs font-bold text-[#5e6b60]">Internal notes<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} maxLength={500} rows={3} placeholder="Optional follow-up notes" className="resize-y rounded-xl border border-[#dfe5dc] px-3 py-2.5 text-sm font-normal text-[#283b2e] outline-none focus:border-[#75a17d]" /></label>
     </div></div>
     <div className="flex items-center justify-end gap-2 border-t border-[#e3e8e1] bg-[#f8faf7] px-5 py-4"><button type="button" onClick={onClose} className="h-10 rounded-xl border border-[#dfe5dc] px-4 text-sm font-bold text-[#617064] hover:bg-[#f2f5f0]">Cancel</button><button disabled={busy} className="h-10 rounded-xl bg-[#174a31] px-5 text-sm font-bold text-white hover:bg-[#205b3d] disabled:opacity-50">{busy ? 'Saving…' : editingId ? 'Save changes' : 'Create customer'}</button></div>
+  </form></div>
+}
+
+function ReviewFormDrawer({ draft, setDraft, editingId, busy, onClose, onSubmit }: { draft: ReviewDraft; setDraft: (draft: ReviewDraft) => void; editingId: string; busy: boolean; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void }) {
+  return <div className="fixed inset-0 z-50 flex justify-end"><button type="button" aria-label="Close review form" onClick={onClose} className="absolute inset-0 cursor-default bg-[#081b13]/55 backdrop-blur-sm" /><form onSubmit={onSubmit} className="relative flex h-full w-full max-w-[560px] flex-col bg-white shadow-2xl animate-in slide-in-from-right duration-300">
+    <div className="flex items-start justify-between gap-4 border-b border-[#e3e8e1] bg-[#143c2d] px-5 py-4 text-white"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#edc76d]">Social proof</p><h2 className="mt-1 text-lg font-bold">{editingId ? 'Edit review' : 'Create review'}</h2><p className="mt-1 text-xs text-white/60">Published reviews appear instantly in the storefront slider.</p></div><button type="button" onClick={onClose} className="grid size-9 shrink-0 place-items-center rounded-xl border border-white/20 text-white/80 hover:bg-white/10" aria-label="Close review form"><X className="size-4" /></button></div>
+    <div className="flex-1 overflow-y-auto p-5">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <AdminInput label="Customer name" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} required maxLength={100} placeholder="Full name" />
+        <AdminInput label="Mobile number (optional)" value={draft.phone} onChange={(value) => setDraft({ ...draft, phone: value })} maxLength={11} placeholder="01XXXXXXXXX" />
+        <AdminInput label="Location (optional)" value={draft.location} onChange={(value) => setDraft({ ...draft, location: value })} maxLength={80} placeholder="e.g. Dhaka" />
+        <label className="grid gap-1.5 text-xs font-bold text-[#5e6b60]">Status<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as ReviewStatus })} className="h-10 rounded-xl border border-[#dfe5dc] px-3 text-sm font-normal text-[#283b2e] outline-none focus:border-[#75a17d]">{reviewStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        <fieldset className="grid gap-2 sm:col-span-2"><legend className="text-xs font-bold text-[#5e6b60]">Rating</legend><div className="flex items-center gap-1">{([1, 2, 3, 4, 5] as const).map((value) => <button key={value} type="button" onClick={() => setDraft({ ...draft, rating: value })} aria-label={`${value} stars`} aria-pressed={draft.rating === value} className="grid size-9 place-items-center rounded-lg transition hover:scale-110"><Star className={`size-7 ${value <= draft.rating ? 'fill-[#d99f39] text-[#d99f39]' : 'text-[#c7c6b8]'}`} /></button>)}<span className="ml-2 text-xs font-bold text-[#8a7b4d]">{draft.rating}/5</span></div></fieldset>
+        <div className="sm:col-span-2"><AdminInput label="Review title (optional)" value={draft.title} onChange={(value) => setDraft({ ...draft, title: value })} maxLength={90} placeholder="e.g. Great taste, pure honey" /></div>
+        <label className="grid gap-1.5 text-xs font-bold text-[#5e6b60] sm:col-span-2">Review text<textarea required value={draft.comment} onChange={(event) => setDraft({ ...draft, comment: event.target.value })} maxLength={600} minLength={10} rows={4} placeholder="Share the customer's experience with the product, packaging or delivery." className="resize-y rounded-xl border border-[#dfe5dc] px-3 py-2.5 text-sm font-normal text-[#283b2e] outline-none focus:border-[#75a17d]" /></label>
+        <AdminInput label="Display order" type="number" min={0} value={String(draft.sortOrder)} onChange={(value) => setDraft({ ...draft, sortOrder: Number(value) })} />
+        <label className="flex items-end pb-2.5 text-sm font-semibold text-[#4f5f52]"><input type="checkbox" checked={draft.featured} onChange={(event) => setDraft({ ...draft, featured: event.target.checked })} className="mr-2 size-4 accent-[#267047]" /> Feature on slider</label>
+      </div>
+
+      <div className="mt-5 rounded-[1.35rem] border border-white/10 bg-[#0f3024] p-5 text-white shadow-[0_20px_45px_-35px_rgba(15,48,36,.9)] sm:rounded-[1.75rem] sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#edc76d]">Storefront preview</p>
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${draft.status === 'published' ? 'bg-emerald-100 text-emerald-700' : draft.status === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'}`}>{draft.status}</span>
+        </div>
+        <span className="mt-4 inline-flex items-center gap-0.5">{[1, 2, 3, 4, 5].map((value) => <Star key={value} className={`size-4 ${value <= draft.rating ? 'fill-[#e5b858] text-[#e5b858]' : 'text-white/25'}`} />)}</span>
+        <h3 className="mt-3 text-base font-bold leading-snug">{draft.title || 'Review title'}</h3>
+        <p className="mt-2 text-[13px] leading-6 text-white/70">“{draft.comment || 'The customer review text will appear here.'}”</p>
+        <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-4">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#e5b858]/15 text-sm font-bold text-[#edc76d]">{reviewInitials(draft.name || 'New Customer')}</span>
+          <div className="min-w-0"><p className="truncate text-sm font-bold">{draft.name || 'New customer'}</p><p className="mt-0.5 truncate text-[11px] text-white/50">{draft.location || 'GhorKotha customer'}</p></div>
+          {draft.featured && <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-[#e5b858]/25 bg-[#e5b858]/10 px-2.5 py-1 text-[10px] font-bold text-[#edc76d]"><Star className="size-3 fill-[#edc76d]" /> Featured</span>}
+        </div>
+      </div>
+    </div>
+    <div className="flex items-center justify-end gap-2 border-t border-[#e3e8e1] bg-[#f8faf7] px-5 py-4"><button type="button" onClick={onClose} className="h-10 rounded-xl border border-[#dfe5dc] px-4 text-sm font-bold text-[#617064] hover:bg-[#f2f5f0]">Cancel</button><button disabled={busy} className="h-10 rounded-xl bg-[#174a31] px-5 text-sm font-bold text-white hover:bg-[#205b3d] disabled:opacity-50">{busy ? 'Saving…' : editingId ? 'Save changes' : 'Create review'}</button></div>
+  </form></div>
+}
+
+function CouponFormDrawer({ draft, setDraft, editingId, busy, onClose, onSubmit }: { draft: CouponDraft; setDraft: (draft: CouponDraft) => void; editingId: string; busy: boolean; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void }) {
+  return <div className="fixed inset-0 z-50 flex justify-end"><button type="button" aria-label="Close coupon form" onClick={onClose} className="absolute inset-0 cursor-default bg-[#081b13]/55 backdrop-blur-sm" /><form onSubmit={onSubmit} className="relative flex h-full w-full max-w-[520px] flex-col bg-white shadow-2xl">
+    <div className="flex items-start justify-between gap-4 border-b border-[#e3e8e1] px-5 py-4"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#9a7b3e]">Promotion</p><h2 className="mt-1 text-lg font-bold text-[#1a3828]">{editingId ? 'Edit coupon' : 'Create coupon'}</h2><p className="mt-1 text-xs text-[#899289]">Coupons are validated on the server during checkout.</p></div><button type="button" onClick={onClose} className="grid size-9 shrink-0 place-items-center rounded-xl border border-[#e3e8e1] text-[#657065] hover:bg-[#f5f7f3]" aria-label="Close coupon form"><X className="size-4" /></button></div>
+    <div className="flex-1 overflow-y-auto p-5"><div className="grid gap-4 sm:grid-cols-2">
+      <AdminInput label="Coupon code" value={draft.code} onChange={(value) => setDraft({ ...draft, code: value.toUpperCase() })} required maxLength={24} placeholder="SAVE10" />
+      <label className="grid gap-1.5 text-xs font-bold text-[#5e6b60]">Type<select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as 'percent' | 'fixed' })} className="h-10 rounded-xl border border-[#dfe5dc] px-3 text-sm font-normal text-[#283b2e] outline-none focus:border-[#75a17d]"><option value="percent">Percent (%)</option><option value="fixed">Fixed (BDT)</option></select></label>
+      <AdminInput label={draft.type === 'percent' ? 'Percent value' : 'Fixed amount (BDT)'} type="number" min={1} value={String(draft.value || '')} onChange={(value) => setDraft({ ...draft, value: Number(value) })} required />
+      <AdminInput label="Minimum subtotal (BDT)" type="number" min={0} value={String(draft.minSubtotal)} onChange={(value) => setDraft({ ...draft, minSubtotal: Number(value) })} />
+      <AdminInput label="Max discount (0 = no cap)" type="number" min={0} value={String(draft.maxDiscount)} onChange={(value) => setDraft({ ...draft, maxDiscount: Number(value) })} />
+      <AdminInput label="Usage limit (0 = unlimited)" type="number" min={0} value={String(draft.usageLimit)} onChange={(value) => setDraft({ ...draft, usageLimit: Number(value) })} />
+      <label className="grid gap-1.5 text-xs font-bold text-[#5e6b60] sm:col-span-2">Expiry (optional)<input type="datetime-local" value={draft.expiresAt ?? ''} onChange={(event) => setDraft({ ...draft, expiresAt: event.target.value || null })} className="h-10 rounded-xl border border-[#dfe5dc] px-3 text-sm font-normal text-[#283b2e] outline-none focus:border-[#75a17d]" /></label>
+      <label className="inline-flex items-center gap-2 text-sm font-semibold text-[#4f5f52] sm:col-span-2"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} className="size-4 accent-[#267047]" /> Coupon active</label>
+    </div></div>
+    <div className="flex items-center justify-end gap-2 border-t border-[#e3e8e1] bg-[#f8faf7] px-5 py-4"><button type="button" onClick={onClose} className="h-10 rounded-xl border border-[#dfe5dc] px-4 text-sm font-bold text-[#617064] hover:bg-[#f2f5f0]">Cancel</button><button disabled={busy} className="h-10 rounded-xl bg-[#174a31] px-5 text-sm font-bold text-white hover:bg-[#205b3d] disabled:opacity-50">{busy ? 'Saving…' : editingId ? 'Save changes' : 'Create coupon'}</button></div>
   </form></div>
 }
 

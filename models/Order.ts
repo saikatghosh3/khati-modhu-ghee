@@ -25,7 +25,9 @@ const orderSchema = new Schema(
     items: { type: [orderItemSchema], required: true },
     subtotal: { type: Number, required: true, min: 1 },
     deliveryCharge: { type: Number, required: true, min: 0 },
-    total: { type: Number, required: true, min: 1 },
+    discount: { type: Number, default: 0, min: 0 },
+    couponCode: { type: String, default: '', trim: true, uppercase: true },
+    total: { type: Number, required: true, min: 0 },
     status: {
       type: String,
       enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled', 'fake'],

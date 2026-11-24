@@ -14,6 +14,8 @@ type TrackedOrder = {
   items: Array<{ title: string; quantity: number; price: number; weight: string; category: string; image: string }>
   subtotal: number
   deliveryCharge: number
+  discount: number
+  couponCode: string
   total: number
   status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'fake'
   createdAt: string
@@ -99,7 +101,12 @@ export function OrderTracker({ initialOrderNumber, initialPhone }: { initialOrde
                   </div>
                   <div className="grid gap-3">
                     <div className="rounded-xl border border-[#e9e1d0] bg-[#fbfcf9] p-4 text-sm"><p className="flex items-start gap-2 font-semibold text-[#4e5f51]"><MapPin className="mt-0.5 size-4 shrink-0 text-[#3d7d51]" /> {order.address}</p><p className="mt-3 flex items-center gap-2 text-xs text-[#7b857b]"><Truck className="size-4 text-[#3d7d51]" /> {order.deliveryZone === 'dhaka' ? 'ঢাকার ভিতরে' : 'ঢাকার বাইরে'}</p><p className="mt-3 flex items-center gap-2 text-xs text-[#7b857b]"><Clock3 className="size-4 text-[#3d7d51]" /> সাধারণত ২–৪ কর্মদিবস</p></div>
-                    <div className="rounded-xl border border-[#e9e1d0] bg-white p-4 text-sm"><div className="flex justify-between text-[#697368]"><span>পণ্যের মূল্য</span><span>{money(order.subtotal)}</span></div><div className="mt-2 flex justify-between text-[#697368]"><span>ডেলিভারি</span><span>{order.deliveryCharge === 0 ? 'ফ্রি' : money(order.deliveryCharge)}</span></div><div className="mt-3 flex justify-between border-t border-[#eee6d5] pt-3 text-base font-bold text-[#173c2a]"><span>সর্বমোট</span><span>{money(order.total)}</span></div></div>
+                    <div className="rounded-xl border border-[#e9e1d0] bg-white p-4 text-sm">
+                      <div className="flex justify-between text-[#697368]"><span>পণ্যের মূল্য</span><span>{money(order.subtotal)}</span></div>
+                      <div className="mt-2 flex justify-between text-[#697368]"><span>ডেলিভারি</span><span>{order.deliveryCharge === 0 ? 'ফ্রি' : money(order.deliveryCharge)}</span></div>
+                      {order.discount > 0 && <div className="mt-2 flex justify-between text-[#2f6b46]"><span>ডিসকাউন্ট {order.couponCode ? `(${order.couponCode})` : ''}</span><span>-{money(order.discount)}</span></div>}
+                      <div className="mt-3 flex justify-between border-t border-[#eee6d5] pt-3 text-base font-bold text-[#173c2a]"><span>সর্বমোট</span><span>{money(order.total)}</span></div>
+                    </div>
                     <a href={`tel:${order.phone}`} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-[#dcd3bf] text-sm font-bold text-[#1c5539]"><Phone className="size-4" /> কল করুন</a>
                   </div>
                 </div>

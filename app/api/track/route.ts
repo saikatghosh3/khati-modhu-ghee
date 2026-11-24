@@ -34,6 +34,8 @@ export async function POST(request: Request) {
         })),
         subtotal: order.subtotal,
         deliveryCharge: order.deliveryCharge,
+        discount: order.discount ?? 0,
+        couponCode: order.couponCode ?? '',
         total: order.total,
         status: order.status,
         createdAt: new Date(order.createdAt).toISOString(),

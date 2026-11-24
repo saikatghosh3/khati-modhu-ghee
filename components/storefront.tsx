@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowRight,
@@ -24,8 +24,11 @@ import {
   X,
 } from 'lucide-react'
 import { SECTION_IMAGES, type ProductCategory, type StorePackage } from '@/lib/catalog'
+import type { StoreReview } from '@/lib/reviews'
+import { ReviewSection } from '@/components/review-section'
 import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
+import { SocialProofToasts } from '@/components/social-proof-toasts'
 
 type CartLine = StorePackage & { quantity: number }
 type DeliveryZone = 'dhaka' | 'outside'
@@ -52,30 +55,39 @@ const benefits = [
 
 const questions = [
   {
+    icon: ShieldCheck,
     question: 'পণ্য হাতে পেয়ে কি টাকা দিতে পারব?',
-    answer: 'অবশ্যই। আমরা সারা বাংলাদেশে ক্যাশ অন ডেলিভারি সুবিধা দিই—পণ্য বুঝে পাওয়ার পর টাকা দিন।',
+    answer: 'হ্যাঁ, নিশ্চিন্তে। আমরা সারা বাংলাদেশে ক্যাশ অন ডেলিভারি দিই। পণ্য হাতে পেয়ে, দেখে বুঝে তারপর মূল্য পরিশোধ করুন।',
   },
   {
-    question: 'ডেলিভারি চার্জ কত?',
-    answer: 'ঢাকার ভেতরে ৳৬০ এবং ঢাকার বাইরে ৳১২০। ফ্রি ডেলিভারি লেখা পণ্যে কোনো ডেলিভারি চার্জ নেই।',
+    icon: Truck,
+    question: 'ডেলিভারি চার্জ কত এবং কত দিনে পাব?',
+    answer: 'ঢাকার ভেতরে ৳৬০ (১–২ কর্মদিবস) এবং ঢাকার বাইরে ৳১২০ (২–৪ কর্মদিবস)। নির্বাচিত ফ্রি ডেলিভারি পণ্যে কোনো চার্জ নেই।',
   },
   {
-    question: 'অর্ডার পৌঁছাতে কত দিন লাগে?',
-    answer: 'ঢাকায় সাধারণত ১–২ কর্মদিবস এবং ঢাকার বাইরে ২–৪ কর্মদিবসের মধ্যে পৌঁছে যায়।',
+    icon: Leaf,
+    question: 'মধু ও ঘি কতটা খাঁটি ও নিরাপদ?',
+    answer: 'আমাদের মধু সংগ্রহ করা হয় সুন্দরবনের মৌয়ালদের কাছ থেকে এবং ঘি তৈরি হয় পাবনা-সিরাজগঞ্জের গাওয়া দুধ থেকে। কোনো ভেজাল বা কৃত্রিম উপাদান নেই।',
   },
   {
-    question: 'মধু আর ঘি কীভাবে চিনব?',
-    answer: 'প্রতিটি পণ্যের ছবি, ওজন ও বিবরণ পণ্যের কার্ডে স্পষ্টভাবে দেখানো আছে। মধু ও ঘি আলাদা সেকশনে বেছে নিতে পারবেন।',
+    icon: PackageCheck,
+    question: 'অর্ডার করার পর কীভাবে ট্র্যাক করব?',
+    answer: 'অর্ডার কনফার্ম হওয়ার পর আপনি একটি অর্ডার নম্বর পাবেন। আমাদের “অর্ডার ট্র্যাক করুন” পেজে নম্বর ও ফোন দিয়ে সহজেই আপডেট দেখতে পারবেন।',
   },
 ]
 
-export function Storefront({ packages }: { packages: StorePackage[] }) {
+export function Storefront({ packages, reviews }: { packages: StorePackage[]; reviews: StoreReview[] }) {
   const [cart, setCart] = useState<CartLine[]>([])
   const [cartOpen, setCartOpen] = useState(false)
+  const [lastAddedId, setLastAddedId] = useState('')
   const [zone, setZone] = useState<DeliveryZone>('dhaka')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
   const [receipt, setReceipt] = useState<{ orderNumber: string; total: number; phone: string } | null>(null)
+  const [couponCode, setCouponCode] = useState('')
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number } | null>(null)
+  const [couponError, setCouponError] = useState('')
+  const [couponBusy, setCouponBusy] = useState(false)
 
   const honeyProducts = packages.filter((product) => product.category === 'honey')
   const gheeProducts = packages.filter((product) => product.category === 'ghee')
@@ -83,7 +95,31 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const freeDelivery = cart.some((item) => item.freeDelivery)
   const deliveryCharge = freeDelivery ? 0 : zone === 'dhaka' ? 60 : 120
-  const total = subtotal + deliveryCharge
+  const discount = appliedCoupon ? Math.min(appliedCoupon.discount, subtotal) : 0
+  const total = Math.max(0, subtotal - discount + deliveryCharge)
+
+  const suggestions = useMemo(() => {
+    if (cart.length === 0) {
+      return [
+        ...packages.filter((product) => product.category === 'honey').slice(0, 2),
+        ...packages.filter((product) => product.category === 'ghee').slice(0, 2),
+      ]
+    }
+    const inCart = new Set(cart.map((item) => item.id))
+    const cartCategories = new Set(cart.map((item) => item.category))
+    const averagePrice = subtotal / itemCount
+    const score = (product: StorePackage) => (cartCategories.has(product.category) ? 0 : 100000) + Math.abs(product.price - averagePrice)
+    return packages
+      .filter((product) => !inCart.has(product.id))
+      .sort((first, second) => score(first) - score(second) || second.sortOrder - first.sortOrder)
+      .slice(0, 4)
+  }, [cart, itemCount, packages, subtotal])
+
+  useEffect(() => {
+    if (!lastAddedId) return
+    const timer = window.setTimeout(() => setLastAddedId(''), 1400)
+    return () => window.clearTimeout(timer)
+  }, [lastAddedId])
 
   useEffect(() => {
     if (!cartOpen) return
@@ -94,6 +130,54 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [cartOpen])
 
+  useEffect(() => {
+    if (!appliedCoupon) return
+    const code = appliedCoupon.code
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch('/api/coupons/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, subtotal }),
+          signal: controller.signal,
+        })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error ?? 'কুপনটি আর প্রযোজ্য নয়।')
+        setAppliedCoupon({ code: result.coupon.code, discount: result.coupon.discount })
+        setCouponError('')
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') return
+        setAppliedCoupon(null)
+        setCouponError(error instanceof Error ? error.message : 'কুপনটি আর প্রযোজ্য নয়।')
+      }
+    }, 250)
+    return () => { controller.abort(); window.clearTimeout(timer) }
+  }, [appliedCoupon?.code, subtotal])
+
+  const applyCoupon = async () => {
+    const code = couponCode.trim().toUpperCase()
+    if (!code) { setCouponError('কুপন কোড লিখুন।'); return }
+    setCouponBusy(true)
+    setCouponError('')
+    try {
+      const response = await fetch('/api/coupons/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, subtotal }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'কুপনটি প্রয়োগ করা যায়নি।')
+      setAppliedCoupon({ code: result.coupon.code, discount: result.coupon.discount })
+      setCouponCode(result.coupon.code)
+    } catch (error) {
+      setAppliedCoupon(null)
+      setCouponError(error instanceof Error ? error.message : 'কুপনটি প্রয়োগ করা যায়নি।')
+    } finally {
+      setCouponBusy(false)
+    }
+  }
+
   const addToCart = (product: StorePackage) => {
     setCart((current) => {
       const existing = current.find((item) => item.id === product.id)
@@ -101,6 +185,7 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
       return [...current, { ...product, quantity: 1 }]
     })
     setCheckoutError('')
+    setLastAddedId(product.id)
     setCartOpen(true)
   }
 
@@ -124,6 +209,7 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
       phone: String(formData.get('phone') ?? '').trim(),
       address: String(formData.get('address') ?? '').trim(),
       deliveryZone: zone,
+      couponCode: appliedCoupon?.code ?? '',
       items: cart.map((item) => ({ packageId: item.id, quantity: item.quantity })),
     }
 
@@ -137,6 +223,9 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
       if (!response.ok) throw new Error(result.error ?? 'অর্ডার জমা হয়নি। আবার চেষ্টা করুন।')
       setReceipt({ orderNumber: result.orderNumber, total: result.total, phone: payload.phone })
       setCart([])
+      setAppliedCoupon(null)
+      setCouponCode('')
+      setCouponError('')
       setCartOpen(false)
       form.reset()
     } catch (error) {
@@ -147,7 +236,7 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#fbf8ef] pt-[100px] text-[#17241d] lg:pt-[112px]">
+    <main className="min-h-screen overflow-hidden bg-[#fbf8ef] pb-28 pt-[100px] text-[#17241d] md:pb-0 lg:pt-[112px]">
       <SiteHeader itemCount={itemCount} onCartOpen={() => setCartOpen(true)} />
 
       <section id="home" className="relative mx-auto grid max-w-7xl items-center gap-8 px-4 pb-12 pt-6 sm:px-6 sm:pb-20 sm:pt-10 lg:grid-cols-[1.03fr_.97fr] lg:gap-14 lg:px-8 lg:pb-24 lg:pt-16">
@@ -228,25 +317,61 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
         </div>
       </section>
 
-      <section className="border-y border-[#e7ddc7] bg-[#f4efdf] px-3 py-10 sm:px-6 sm:py-20 lg:px-8">
-        <div className="mx-auto grid max-w-7xl gap-6 sm:gap-9 lg:grid-cols-[.8fr_1.2fr]">
-          <div><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#aa7928] sm:text-xs sm:tracking-[0.22em]">আপনার প্রশ্নের উত্তর</span><h2 className="mt-2 text-[1.4rem] font-bold text-[#143c2d] sm:mt-3 sm:text-3xl lg:text-4xl">জানুন, তারপর নিশ্চিন্তে অর্ডার করুন</h2><p className="mt-3 text-xs leading-6 text-[#687168] sm:mt-4 sm:text-sm sm:leading-7">অর্ডার করার আগে আরও কিছু জানতে চাইলে আমাদের প্রশ্নোত্তর দেখুন।</p></div>
-          <div id="faq" className="divide-y divide-[#ddd3bc] rounded-[1.35rem] border border-[#e0d6be] bg-[#fbf8ef] px-4 sm:rounded-[1.5rem] sm:px-7">
-            {questions.map(({ question, answer }) => <details key={question} className="group py-4 sm:py-5">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[#213c2c] marker:hidden sm:gap-4"><span>{question}</span><ChevronDown className="size-4 shrink-0 text-[#9d772f] transition group-open:rotate-180" /></summary>
-              <p className="max-w-2xl pt-3 text-xs leading-6 text-[#6d756b] sm:text-sm sm:leading-7">{answer}</p>
-            </details>)}
+      <section className="relative overflow-hidden border-y border-[#e7ddc7] bg-[#f4efdf] px-3 py-12 sm:px-6 sm:py-20 lg:px-8">
+        <div className="pointer-events-none absolute -left-16 top-10 size-48 rounded-full bg-[#e5b858]/10 blur-3xl" />
+        <div className="pointer-events-none absolute -right-10 bottom-0 size-56 rounded-full bg-[#143c2d]/5 blur-3xl" />
+        <div className="mx-auto grid max-w-7xl gap-8 sm:gap-10 lg:grid-cols-[.85fr_1.15fr] lg:items-start">
+          <div className="relative">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#e3cfa0] bg-[#fbf4e1] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-[#aa7928] sm:text-xs">
+              <Sparkles className="size-3.5" /> আপনার প্রশ্নের উত্তর
+            </span>
+            <h2 className="mt-4 text-[1.6rem] font-bold leading-tight text-[#143c2d] sm:text-3xl lg:text-[2.6rem]">
+              জানুন, তারপর <span className="text-[#b8841f]">নিশ্চিন্তে</span> অর্ডার করুন
+            </h2>
+            <p className="mt-4 max-w-md text-sm leading-7 text-[#687168]">
+              অর্ডার, ডেলিভারি ও পণ্যের মান নিয়ে সাধারণ প্রশ্নগুলোর পরিষ্কার উত্তর এখানে দেওয়া আছে।
+            </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              {[
+                { icon: ShieldCheck, text: 'ক্যাশ অন ডেলিভারি সুবিধা' },
+                { icon: Truck, text: 'সারা বাংলাদেশে ডেলিভারি' },
+              ].map(({ icon: Icon, text }) => (
+                <div key={text} className="flex items-center gap-3 rounded-2xl border border-[#e5d9bf] bg-[#fbf8ef]/80 px-4 py-3">
+                  <span className="grid size-9 place-items-center rounded-xl bg-[#e8f0e4] text-[#2f6b46]"><Icon className="size-4" /></span>
+                  <span className="text-sm font-semibold text-[#294333]">{text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div id="faq" className="relative space-y-3">
+            {questions.map(({ icon: Icon, question, answer }, index) => (
+              <details key={question} className="group overflow-hidden rounded-2xl border border-[#e0d6be] bg-[#fbf8ef] shadow-[0_10px_30px_-28px_rgba(20,60,45,.45)] transition duration-300 open:border-[#cdb98a] open:bg-white">
+                <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-4 marker:hidden sm:items-center sm:gap-4 sm:px-5 sm:py-5">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#f3ebd6] text-[#8a5c13] transition group-open:bg-[#143c2d] group-open:text-[#f4ce7b]">
+                    <Icon className="size-[18px]" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-[#aa7928]">প্রশ্ন {index + 1}</span>
+                    <span className="mt-1 block text-sm font-semibold leading-6 text-[#213c2c] sm:text-[15px]">{question}</span>
+                  </span>
+                  <span className="grid size-8 shrink-0 place-items-center rounded-full border border-[#d9cba7] bg-white text-[#9d772f] transition group-open:rotate-180 group-open:border-[#143c2d] group-open:bg-[#143c2d] group-open:text-white">
+                    <ChevronDown className="size-4" />
+                  </span>
+                </summary>
+                <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+                  <p className="border-t border-[#ebe2cd] pt-4 text-sm leading-7 text-[#6d756b] sm:pl-14">{answer}</p>
+                </div>
+              </details>
+            ))}
           </div>
         </div>
       </section>
 
-      <SiteFooter />
+      <ReviewSection reviews={reviews} />
 
-      <div className="fixed inset-x-0 bottom-0 z-20 flex items-center gap-2 border-t border-[#e2d7bf] bg-[#fbf8ef]/95 p-2 backdrop-blur lg:hidden">
-        <div className="min-w-0 flex-1"><span className="block text-[10px] text-[#777c71]">মধু ও ঘি</span><span className="block truncate text-xs font-bold text-[#143c2d]">ক্যাশ অন ডেলিভারি</span></div>
-        <a href="#honey" className="inline-flex min-h-10 items-center rounded-full bg-[#d99f39] px-4 text-xs font-bold text-[#183622]">অর্ডার করুন</a>
-        <button onClick={() => setCartOpen(true)} className="relative grid size-10 shrink-0 place-items-center rounded-full bg-[#143c2d] text-white" aria-label="কার্ট খুলুন"><ShoppingBag className="size-4" />{itemCount > 0 && <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-[#d59c34] text-[9px] font-bold">{itemCount}</span>}</button>
-      </div>
+      <SiteFooter itemCount={itemCount} onCartOpen={() => setCartOpen(true)} />
+      <SocialProofToasts />
 
       {cartOpen && <div className="fixed inset-0 z-50 flex justify-end">
         <button aria-label="কার্ট বন্ধ করুন" className="absolute inset-0 cursor-default bg-[#0d1b13]/55 backdrop-blur-[2px]" onClick={() => setCartOpen(false)} />
@@ -259,6 +384,7 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
             <span className="grid size-16 place-items-center rounded-full bg-[#e8f0e4] text-[#286144]"><ShoppingBag className="size-7" /></span>
             <h3 className="mt-5 text-xl font-bold text-[#143c2d]">আপনার কার্ট এখনো খালি</h3><p className="mt-2 text-sm text-[#73796f]">পছন্দের মধু বা ঘি বেছে নিয়ে অর্ডার শুরু করুন।</p>
             <button onClick={() => { setCartOpen(false); document.getElementById('honey')?.scrollIntoView({ behavior: 'smooth' }) }} className="mt-6 rounded-full bg-[#143c2d] px-6 py-3 text-sm font-bold text-white">মধু দেখুন</button>
+            <CartSuggestions suggestions={suggestions} lastAddedId={lastAddedId} onAdd={addToCart} />
           </div> : <>
             <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-7">
               <div className="flex flex-col gap-3">
@@ -269,7 +395,8 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
                   </div>
                 </article>)}
               </div>
-              <form className="mt-6" onSubmit={submitOrder}>
+              <CartSuggestions suggestions={suggestions} lastAddedId={lastAddedId} onAdd={addToCart} />
+              <form id="checkout-form" className="mt-6" onSubmit={submitOrder}>
                 <h3 className="text-lg font-bold text-[#173c2a]">ডেলিভারি তথ্য</h3>
                 <div className="mt-4 grid gap-3">
                   <label className="grid gap-1.5 text-xs font-semibold text-[#4e5a50]">আপনার পূর্ণ নাম<input required name="customerName" autoComplete="name" minLength={2} maxLength={100} placeholder="যেমন: সুমাইয়া আক্তার" className="h-12 rounded-xl border border-[#ded7c7] bg-white px-4 text-sm font-normal text-[#17241d] outline-none transition placeholder:text-[#aaa99f] focus:border-[#5c8763] focus:ring-2 focus:ring-[#5c8763]/15" /></label>
@@ -279,30 +406,54 @@ export function Storefront({ packages }: { packages: StorePackage[] }) {
                     {([{ value: 'dhaka', label: 'ঢাকার ভিতরে', charge: '৳৬০' }, { value: 'outside', label: 'ঢাকার বাইরে', charge: '৳১২০' }] as const).map((option) => <label key={option.value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-3 text-xs font-semibold transition ${zone === option.value ? 'border-[#4a7954] bg-[#e9f0e5] text-[#204932]' : 'border-[#ded7c7] bg-white text-[#626b60]'}`}><input type="radio" name="zone" value={option.value} checked={zone === option.value} onChange={() => setZone(option.value)} className="accent-[#287046]" /><span className="flex-1">{option.label}</span><span className="text-[10px]">{freeDelivery ? 'ফ্রি' : option.charge}</span></label>)}
                   </div></fieldset>
                   <div className="flex items-center gap-3 rounded-xl bg-[#eaf0e5] px-4 py-3"><span className="grid size-9 place-items-center rounded-full bg-white text-[#34734b]"><Check className="size-4" /></span><span><span className="block text-sm font-bold text-[#214d33]">ক্যাশ অন ডেলিভারি</span><span className="block text-[11px] text-[#667466]">পণ্য হাতে পেয়ে টাকা পরিশোধ</span></span></div>
-                  {checkoutError && <p role="alert" className="rounded-xl border border-[#e7c8bd] bg-[#fff4ef] px-4 py-3 text-sm text-[#9c442d]">{checkoutError}</p>}
-                  <div className="rounded-xl border border-[#e4dbc6] bg-white p-4 text-sm">
-                    <div className="flex justify-between text-[#697168]"><span>পণ্যের মূল্য</span><span>{taka(subtotal)}</span></div>
-                    <div className="mt-2 flex justify-between text-[#697168]"><span>ডেলিভারি</span><span>{deliveryCharge === 0 ? 'ফ্রি' : taka(deliveryCharge)}</span></div>
-                    <div className="mt-3 flex justify-between border-t border-[#eee7d8] pt-3 font-bold text-[#173c2a]"><span>সর্বমোট</span><span className="text-lg">{taka(total)}</span></div>
+
+                  <div className="rounded-xl border border-[#ded7c7] bg-white p-3.5">
+                    <label className="block text-xs font-semibold text-[#4e5a50]">কুপন কোড</label>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={couponCode}
+                        onChange={(event) => { setCouponCode(event.target.value.toUpperCase()); setCouponError('') }}
+                        placeholder="যেমন: SAVE50"
+                        className="h-11 min-w-0 flex-1 rounded-xl border border-[#ded7c7] px-3 text-sm uppercase tracking-wide text-[#17241d] outline-none transition focus:border-[#5c8763] focus:ring-2 focus:ring-[#5c8763]/15"
+                      />
+                      {appliedCoupon ? (
+                        <button type="button" onClick={() => { setAppliedCoupon(null); setCouponCode(''); setCouponError('') }} className="h-11 rounded-xl border border-[#d7c9b3] px-4 text-xs font-bold text-[#6b5a35] hover:bg-[#f7f1e2]">সরান</button>
+                      ) : (
+                        <button type="button" onClick={applyCoupon} disabled={couponBusy || cart.length === 0} className="h-11 rounded-xl bg-[#143c2d] px-4 text-xs font-bold text-white transition hover:bg-[#20553f] disabled:opacity-50">{couponBusy ? 'যাচাই...' : 'প্রয়োগ'}</button>
+                      )}
+                    </div>
+                    {appliedCoupon && <p className="mt-2 text-[11px] font-semibold text-[#2f6b46]">কুপন {appliedCoupon.code} প্রয়োগ হয়েছে। ডিসকাউন্ট: {taka(discount)}</p>}
+                    {couponError && <p role="status" className="mt-2 text-[11px] font-medium text-[#9c442d]">{couponError}</p>}
                   </div>
-                  <button disabled={isSubmitting || cart.length === 0} className="inline-flex min-h-14 w-full items-center justify-center rounded-full bg-[#d99f39] px-5 font-bold text-[#183622] transition hover:bg-[#e7b64e] disabled:cursor-not-allowed disabled:opacity-60">{isSubmitting ? 'অর্ডার পাঠানো হচ্ছে…' : 'অর্ডার কনফার্ম করুন'} <ArrowRight className="ml-2 size-4" /></button>
-                  <p className="pb-3 text-center text-[11px] text-[#898b80]">আপনার তথ্য শুধু অর্ডার পৌঁছে দিতে ব্যবহার করা হবে।</p>
                 </div>
               </form>
+            </div>
+            <div className="shrink-0 border-t border-[#e4dbc6] bg-white/90 px-5 py-4 backdrop-blur sm:px-7">
+              {checkoutError && <p role="alert" className="mb-3 rounded-xl border border-[#e7c8bd] bg-[#fff4ef] px-4 py-3 text-sm text-[#9c442d]">{checkoutError}</p>}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center justify-between gap-3 sm:block">
+                  <span className="block text-[10px] font-semibold text-[#777c71]">পণ্য {taka(subtotal)} · ডেলিভারি {deliveryCharge === 0 ? 'ফ্রি' : taka(deliveryCharge)}{discount > 0 ? ` · ডিসকাউন্ট -${taka(discount)}` : ''}</span>
+                  <span className="flex items-baseline gap-2"><span className="text-xs font-bold text-[#4e5a50]">সর্বমোট</span><strong className="text-xl font-extrabold text-[#173c2a] sm:text-2xl">{taka(total)}</strong></span>
+                </div>
+                <button type="submit" form="checkout-form" disabled={isSubmitting || cart.length === 0} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#d99f39] px-5 text-sm font-bold text-[#183622] transition hover:bg-[#e7b64e] disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-14 sm:w-auto sm:px-6">{isSubmitting ? 'অর্ডার পাঠানো হচ্ছে…' : 'অর্ডার কনফার্ম করুন'} <ArrowRight className="ml-2 size-4" /></button>
+              </div>
+              <p className="mt-2 hidden text-center text-[10px] text-[#898b80] sm:block">আপনার তথ্য শুধু অর্ডার পৌঁছে দিতে ব্যবহার করা হবে।</p>
             </div>
           </>}
         </aside>
       </div>}
 
       {receipt && <div className="fixed inset-0 z-[60] grid place-items-center bg-[#0d1b13]/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
-        <div className="w-full max-w-md rounded-[2rem] bg-[#fbf8ef] p-7 text-center shadow-2xl sm:p-9">
-          <span className="mx-auto grid size-16 place-items-center rounded-full bg-[#e7f1e4] text-[#2e774a]"><CircleCheck className="size-8" /></span>
-          <span className="mt-5 block text-xs font-bold uppercase tracking-[0.2em] text-[#a77b2d]">অর্ডার সফল</span>
-          <h2 id="receipt-title" className="mt-2 text-2xl font-bold text-[#143c2d]">ধন্যবাদ, আপনার অর্ডারটি পেয়েছি!</h2>
-          <p className="mt-3 text-sm leading-6 text-[#687168]">আমাদের টিম শিগগিরই আপনার সঙ্গে যোগাযোগ করে অর্ডার নিশ্চিত করবে।</p>
-          <div className="mt-6 rounded-2xl border border-[#e3d8bf] bg-white p-4"><span className="block text-xs text-[#7b8279]">আপনার অর্ডার নম্বর</span><strong className="mt-1 block text-lg tracking-wide text-[#173c2a]">{receipt.orderNumber}</strong><span className="mt-2 block text-sm font-semibold text-[#a77b2d]">সর্বমোট {taka(receipt.total)}</span></div>
-          <a href={`/track?order=${encodeURIComponent(receipt.orderNumber)}&phone=${encodeURIComponent(receipt.phone)}`} className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#143c2d] px-6 text-sm font-bold text-[#143c2d] transition hover:bg-[#eef3ea]">অর্ডার ট্র্যাক করুন</a>
-          <button onClick={() => setReceipt(null)} className="mt-3 min-h-12 w-full rounded-full bg-[#143c2d] px-6 font-bold text-white transition hover:bg-[#20553f]">ঠিক আছে</button>
+        <div className="relative w-full max-w-md overflow-hidden rounded-[2rem] bg-[#fbf8ef] p-7 text-center shadow-2xl sm:p-9">
+          <div className="pointer-events-none absolute -left-12 -top-12 size-40 rounded-full bg-[#e5b858]/15 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-14 -right-12 size-44 rounded-full bg-[#2f6b46]/10 blur-3xl" />
+          <span className="relative mx-auto grid size-16 place-items-center rounded-full bg-[#e7f1e4] text-[#2e774a]"><CircleCheck className="size-8" /></span>
+          <span className="relative mt-5 block text-xs font-bold uppercase tracking-[0.2em] text-[#a77b2d]">অভিনন্দন! অর্ডার সফল</span>
+          <h2 id="receipt-title" className="relative mt-2 text-2xl font-bold text-[#143c2d]">আপনার অর্ডারটি নিশ্চিত হয়েছে!</h2>
+          <p className="relative mt-3 text-sm leading-6 text-[#687168]">অভিনন্দন! আপনার অর্ডারটি সফলভাবে গ্রহণ করা হয়েছে। আমাদের টিম শিগগিরই আপনার সঙ্গে যোগাযোগ করে অর্ডার নিশ্চিত করবে।</p>
+          <div className="relative mt-6 rounded-2xl border border-[#e3d8bf] bg-white p-4"><span className="block text-xs text-[#7b8279]">আপনার অর্ডার নম্বর</span><strong className="mt-1 block text-lg tracking-wide text-[#173c2a]">{receipt.orderNumber}</strong><span className="mt-2 block text-sm font-semibold text-[#a77b2d]">সর্বমোট {taka(receipt.total)}</span></div>
+          <a href={`/track?order=${encodeURIComponent(receipt.orderNumber)}&phone=${encodeURIComponent(receipt.phone)}`} className="relative mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#143c2d] px-6 text-sm font-bold text-[#143c2d] transition hover:bg-[#eef3ea]">অর্ডার ট্র্যাক করুন</a>
+          <button onClick={() => setReceipt(null)} className="relative mt-3 min-h-12 w-full rounded-full bg-[#143c2d] px-6 font-bold text-white transition hover:bg-[#20553f]">ঠিক আছে</button>
         </div>
       </div>}
     </main>
@@ -493,4 +644,31 @@ function ProductCard({ product, onAdd }: { product: StorePackage; onAdd: (produc
       </div>
     </article>
   )
+}
+
+function CartSuggestions({ suggestions, lastAddedId, onAdd }: { suggestions: StorePackage[]; lastAddedId: string; onAdd: (product: StorePackage) => void }) {
+  if (suggestions.length === 0) return null
+
+  return <section className="mt-6 w-full max-w-[460px] rounded-2xl border border-[#e6ddc9] bg-[#f4efdf] p-4 text-left sm:rounded-[1.35rem] sm:p-5">
+    <div className="flex items-start gap-2">
+      <Sparkles className="mt-0.5 size-4 shrink-0 text-[#a77b2d]" />
+      <div>
+        <h3 className="text-sm font-bold text-[#173c2a]">আপনার পছন্দ হতে পারে</h3>
+        <p className="mt-0.5 text-[11px] text-[#777c71]">কার্টের সাথে মিলিয়ে বেছে নেওয়া কয়েকটি পণ্য</p>
+      </div>
+    </div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      {suggestions.map((product) => <article key={product.id} className="flex items-center gap-2.5 rounded-xl border border-[#e3d9c2] bg-white p-2.5">
+        <div className={`relative size-12 shrink-0 overflow-hidden rounded-lg ${product.category === 'honey' ? 'bg-[#fff3d6]' : 'bg-[#eef4e2]'}`}><Image src={product.image} alt="" fill sizes="48px" className="object-cover" /></div>
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate text-xs font-bold text-[#193d2d]" title={product.title}>{product.title}</h4>
+          <p className="mt-0.5 truncate text-[10px] text-[#898b80]">{product.weight}</p>
+          <p className="mt-0.5 text-xs font-bold text-[#9c7026]">{taka(product.price)}</p>
+        </div>
+        <button onClick={() => onAdd(product)} aria-label={`${product.title} কার্টে যোগ করুন`} title="কার্টে যোগ করুন" className={`grid size-9 shrink-0 place-items-center rounded-full text-white transition hover:scale-105 ${lastAddedId === product.id ? 'bg-[#28734c]' : 'bg-[#143c2d] hover:bg-[#20553f]'}`}>
+          {lastAddedId === product.id ? <Check className="size-4" /> : <Plus className="size-4" />}
+        </button>
+      </article>)}
+    </div>
+  </section>
 }

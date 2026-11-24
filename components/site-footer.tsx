@@ -6,19 +6,24 @@ import {
   ArrowRight,
   ArrowUp,
   Clock3,
+  Grid2X2,
   Leaf,
   Mail,
   MapPin,
   MessageCircle,
+  ShoppingBag,
   ShieldCheck,
   Sparkles,
+  Store,
   Truck,
+  Home,
 } from 'lucide-react'
 import { MessageSidebar } from '@/components/message-sidebar'
 
-export function SiteFooter() {
+export function SiteFooter({ itemCount, onCartOpen }: { itemCount: number; onCartOpen: () => void }) {
   const [showTop, setShowTop] = useState(false)
   const [messageOpen, setMessageOpen] = useState(false)
+  const [categoriesOpen, setCategoriesOpen] = useState(false)
 
   useEffect(() => {
     const onScroll = () => setShowTop(window.scrollY > 400)
@@ -43,8 +48,8 @@ export function SiteFooter() {
             ].map(({ icon: Icon, title, text }) => <div key={title} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.04] px-3 py-2.5 backdrop-blur-sm transition hover:border-[#e5b858]/40 hover:bg-white/[.07] sm:gap-3 sm:rounded-2xl sm:px-4 sm:py-3.5"><span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#e5b858]/15 text-[#edc76d] sm:size-10 sm:rounded-xl"><Icon className="size-4 sm:size-[18px]" /></span><span><span className="block text-xs font-bold sm:text-sm">{title}</span><span className="block text-[10px] text-white/55 sm:text-[11px]">{text}</span></span></div>)}
           </div>
 
-          <div className="mt-8 grid gap-8 border-t border-white/10 pb-10 pt-8 sm:mt-12 sm:gap-10 sm:pb-12 sm:pt-12 md:grid-cols-2 lg:grid-cols-[1.25fr_.8fr_.85fr_1.4fr]">
-            <div>
+          <div className="mt-8 grid grid-cols-2 gap-x-4 gap-y-8 border-t border-white/10 pb-10 pt-8 sm:mt-12 sm:gap-x-6 sm:gap-y-10 sm:pb-12 sm:pt-12 md:grid-cols-2 lg:grid-cols-[1.25fr_.8fr_.85fr_1.4fr] lg:gap-8">
+            <div className="col-span-2 md:col-span-1">
               <Link href="/" className="flex items-center gap-2.5 sm:gap-3" aria-label="ঘরকথা হোম">
                 <span className="grid size-9 place-items-center rounded-xl bg-[#e5b858] text-[#123526] sm:size-11 sm:rounded-2xl"><Leaf className="size-4 sm:size-5" /></span>
                 <span className="leading-tight"><span className="block text-lg font-bold sm:text-xl">ঘরকথা</span><span className="block text-[9px] font-semibold uppercase tracking-[0.2em] text-[#e5b858] sm:text-[10px]">প্রকৃতির আপন স্বাদ</span></span>
@@ -78,7 +83,7 @@ export function SiteFooter() {
               </ul>
             </div>
 
-            <div className="rounded-[1.25rem] border border-white/10 bg-white/[.05] p-4 backdrop-blur-sm sm:rounded-[1.5rem] sm:p-6">
+            <div className="col-span-2 rounded-[1.25rem] border border-white/10 bg-white/[.05] p-4 backdrop-blur-sm sm:rounded-[1.5rem] sm:p-6 md:col-span-1">
               <span className="inline-flex items-center gap-2 rounded-full bg-[#e5b858]/15 px-2.5 py-1 text-[10px] font-bold text-[#edc76d] sm:px-3 sm:py-1.5 sm:text-[11px]"><MessageCircle className="size-3.5" /> আমাদের মেসেজ দিন</span>
               <h3 className="mt-2.5 text-lg font-bold sm:mt-3 sm:text-xl">কোনো প্রশ্ন আছে?</h3>
               <p className="mt-1.5 text-[11px] leading-6 text-white/60 sm:text-xs">অর্ডার, ডেলিভারি বা পণ্য নিয়ে যেকোনো কথা জানাতে এই ফর্ম ব্যবহার করুন।</p>
@@ -98,6 +103,38 @@ export function SiteFooter() {
       </footer>
 
       <MessageSidebar open={messageOpen} onClose={() => setMessageOpen(false)} />
+
+      <nav className="fixed inset-x-2 z-40 mx-auto flex max-w-[500px] items-center justify-around rounded-full border border-white/10 bg-[#143c2d] p-1.5 text-white shadow-[0_12px_35px_-12px_rgba(15,35,23,.7)] md:hidden" style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom))' }} aria-label="মোবাইল নেভিগেশন">
+        <a href="#home" className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-full py-2 text-[9px] font-medium text-white/65 transition hover:text-white">
+          <Home className="size-5" />
+          <span>হোম</span>
+        </a>
+        <a href="#honey" className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-full py-2 text-[9px] font-medium text-white/65 transition hover:text-white">
+          <Store className="size-5" />
+          <span>শপ</span>
+        </a>
+        <div className="relative min-w-0 flex-1">
+          {categoriesOpen && <div className="absolute bottom-full left-1/2 mb-3 grid w-36 -translate-x-1/2 gap-1 rounded-2xl border border-[#e4dbc6] bg-[#fbf8ef] p-2 text-[#143c2d] shadow-xl">
+            <a href="#honey" onClick={() => setCategoriesOpen(false)} className="rounded-xl px-3 py-2.5 text-center text-xs font-semibold transition hover:bg-[#f0e8d5]">খাঁটি মধু</a>
+            <a href="#ghee" onClick={() => setCategoriesOpen(false)} className="rounded-xl px-3 py-2.5 text-center text-xs font-semibold transition hover:bg-[#f0e8d5]">গাওয়া ঘি</a>
+          </div>}
+          <button type="button" onClick={() => setCategoriesOpen((open) => !open)} aria-expanded={categoriesOpen} aria-label="পণ্যের ক্যাটাগরি" className="flex w-full flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-white/[.12] py-2 text-[9px] font-semibold text-[#f4ce7b] transition hover:bg-white/[.18]">
+            <Grid2X2 className="size-5" />
+            <span>ক্যাটাগরি</span>
+          </button>
+        </div>
+        <Link href="/track" className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-full py-2 text-[9px] font-medium text-white/65 transition hover:text-white">
+          <Truck className="size-5" />
+          <span>ট্র্যাক</span>
+        </Link>
+        <button type="button" onClick={onCartOpen} aria-label={`কার্ট খুলুন${itemCount > 0 ? `, ${itemCount}টি পণ্য` : ''}`} className="relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-full py-2 text-[9px] font-medium text-white/65 transition hover:text-white">
+          <span className="relative">
+            <ShoppingBag className="size-5" />
+            {itemCount > 0 && <span className="absolute -right-2 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-[#e5b858] px-1 text-[9px] font-bold text-[#143c2d]">{itemCount}</span>}
+          </span>
+          <span>কার্ট</span>
+        </button>
+      </nav>
 
       <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="পেইজের উপরে যান" className={`fixed bottom-20 right-3 z-30 grid size-10 place-items-center rounded-full bg-[#e5b858] text-[#123526] shadow-[0_12px_30px_-10px_rgba(0,0,0,.5)] transition duration-300 hover:-translate-y-1 hover:bg-[#f3cf83] sm:bottom-24 sm:right-4 sm:size-12 lg:bottom-7 lg:right-7 ${showTop ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-4 opacity-0'}`}><ArrowUp className="size-4 sm:size-5" /></button>
     </>

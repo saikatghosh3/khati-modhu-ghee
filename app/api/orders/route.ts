@@ -3,7 +3,9 @@ import { NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/admin-auth'
 import { isProductCategory } from '@/lib/catalog'
 import { connectToDatabase, isMongoConfigured } from '@/lib/db'
+import { getCouponQuote } from '@/lib/coupons'
 import { syncCustomerFromOrder } from '@/lib/customers'
+import { CouponModel } from '@/models/Coupon'
 import { OrderModel } from '@/models/Order'
 import { PackageModel } from '@/models/Package'
 
@@ -46,6 +48,8 @@ export async function GET(request: Request) {
       items: order.items.map((item: { packageId: string; title: string; price: number; quantity: number; gheeWeight: string; honeyWeight: string }) => ({ ...item })),
       subtotal: order.subtotal,
       deliveryCharge: order.deliveryCharge,
+      discount: order.discount ?? 0,
+      couponCode: order.couponCode ?? '',
       total: order.total,
       status: order.status,
       createdAt: new Date(order.createdAt).toISOString(),
@@ -77,6 +81,7 @@ export async function POST(request: Request) {
   const address = typeof input.address === 'string' ? input.address.trim() : ''
   const deliveryZone = input.deliveryZone
   const requestedItems = input.items
+  const couponCode = typeof input.couponCode === 'string' ? input.couponCode.trim().toUpperCase() : ''
 
   if (customerName.length < 2 || customerName.length > 100) {
     return NextResponse.json({ error: 'পূর্ণ নাম ২ থেকে ১০০ অক্ষরের মধ্যে লিখুন।' }, { status: 400 })
@@ -137,6 +142,29 @@ export async function POST(request: Request) {
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
     const hasFreeDelivery = packages.some((product) => product.freeDelivery)
     const deliveryCharge = hasFreeDelivery ? 0 : deliveryZone === 'dhaka' ? 60 : 120
+    let discount = 0
+    let appliedCouponCode = ''
+
+    if (couponCode) {
+      const quote = await getCouponQuote(couponCode, subtotal)
+      if (!quote.ok) return NextResponse.json({ error: quote.error }, { status: 400 })
+      const consumed = await CouponModel.findOneAndUpdate(
+        {
+          code: quote.coupon.code,
+          active: true,
+          $and: [
+            { $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] },
+            { $or: [{ usageLimit: 0 }, { $expr: { $lt: ['$usedCount', '$usageLimit'] } }] },
+          ],
+        },
+        { $inc: { usedCount: 1 } },
+        { new: true },
+      ).lean()
+      if (!consumed) return NextResponse.json({ error: 'এই কুপনটি এখন আর ব্যবহারযোগ্য নয়।' }, { status: 400 })
+      discount = quote.coupon.discount
+      appliedCouponCode = quote.coupon.code
+    }
+
     const orderNumber = `GWH-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString('hex').toUpperCase()}`
     const order = await OrderModel.create({
       orderNumber,
@@ -147,12 +175,14 @@ export async function POST(request: Request) {
       items,
       subtotal,
       deliveryCharge,
-      total: subtotal + deliveryCharge,
+      discount,
+      couponCode: appliedCouponCode,
+      total: Math.max(0, subtotal - discount + deliveryCharge),
       status: 'pending',
     })
     await syncCustomerFromOrder({ name: customerName, phone, address })
 
-    return NextResponse.json({ orderNumber: order.orderNumber, total: order.total }, { status: 201 })
+    return NextResponse.json({ orderNumber: order.orderNumber, total: order.total, discount: order.discount, couponCode: order.couponCode }, { status: 201 })
   } catch {
     return NextResponse.json({ error: 'অর্ডার সংরক্ষণ করা যায়নি। কিছুক্ষণ পরে আবার চেষ্টা করুন।' }, { status: 503 })
   }
