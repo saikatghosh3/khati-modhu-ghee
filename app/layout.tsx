@@ -37,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="bn">
+    <html lang="bn" suppressHydrationWarning>
       <body className={`${notoSansBengali.className} antialiased`} suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{ __html: "try{if(sessionStorage.getItem('ghorkotha_loaded'))document.documentElement.dataset.ghLoaded='1'}catch(e){}" }} />
         <InitialLoader />
